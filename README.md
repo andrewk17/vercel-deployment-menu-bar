@@ -17,7 +17,7 @@ This app sits in your macOS menu bar and continuously monitors your Vercel deplo
 
 ### Pre-built Binary (Easiest)
 
-1. Download the latest release from the [Releases](../../releases) page
+1. Download the latest release from the [Releases](https://github.com/andrewk17/vercel-deployment-menu-bar/releases) page
 2. Unzip and move the app to your Applications folder
 3. Launch the app
 4. Click the menu bar icon and select "Preferences" to configure your Vercel API token
@@ -31,8 +31,8 @@ Requirements:
 
 ```bash
 # Clone the repository
-git clone https://github.com/YOUR_USERNAME/vercel-status-menubar.git
-cd vercel-status-menubar
+git clone https://github.com/andrewk17/vercel-deployment-menu-bar.git
+cd vercel-deployment-menu-bar
 
 # Build the app
 swift build -c release
