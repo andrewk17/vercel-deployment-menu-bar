@@ -11,6 +11,7 @@ final class StatusItemController {
     private var latestDeployments: [Deployment] = []
     private var lastError: Error?
     private var lastFetchDate: Date?
+    private var missingToken: Bool = false
 
     private var preferencesObserver: NSObjectProtocol?
 
@@ -116,8 +117,10 @@ final class StatusItemController {
                 guard preferences.hasToken else {
                     await MainActor.run {
                         self.latestDeployments = []
-                        self.lastError = APIError.missingToken
+                        self.lastError = nil
+                        self.missingToken = true
                         self.buildMenu()
+                        self.updateStatusButton()
                     }
                     return
                 }
@@ -128,6 +131,7 @@ final class StatusItemController {
                 await MainActor.run {
                     self.latestDeployments = filtered
                     self.lastError = nil
+                    self.missingToken = false
                     self.lastFetchDate = Date()
                     let hasBuilding = filtered.contains { $0.state == .building || $0.state == .queued }
                     self.scheduleRefreshTimer(hasBuilding: hasBuilding)
@@ -138,6 +142,7 @@ final class StatusItemController {
                 await MainActor.run {
                     self.latestDeployments = []
                     self.lastError = error
+                    self.missingToken = false
                     self.buildMenu()
                     self.updateStatusButton()
                 }
@@ -193,6 +198,13 @@ final class StatusItemController {
 
     private func updateStatusButton() {
         guard let button = statusItem.button else { return }
+
+        if missingToken {
+            button.title = "No Token"
+            button.image = NSImage(systemSymbolName: "key.slash", accessibilityDescription: nil)
+            return
+        }
+
         guard lastError == nil else {
             button.title = "Error"
             button.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: nil)
@@ -307,7 +319,10 @@ final class StatusItemController {
     private func buildMenu() {
         menu.removeAllItems()
 
-        if let error = lastError {
+        if missingToken {
+            menu.addItem(NSMenuItem(title: "Add your Vercel token in Preferences", action: nil, keyEquivalent: ""))
+            menu.addItem(.separator())
+        } else if let error = lastError {
             let errorItem = NSMenuItem(
                 title: "Error: \(error.localizedDescription)",
                 action: nil,
@@ -315,14 +330,11 @@ final class StatusItemController {
             )
             menu.addItem(errorItem)
             menu.addItem(.separator())
-        } else if !PreferencesStore.shared.current.hasToken {
-            menu.addItem(NSMenuItem(title: "Add your Vercel token in Preferences", action: nil, keyEquivalent: ""))
-            menu.addItem(.separator())
         }
 
-        if latestDeployments.isEmpty && lastError == nil {
+        if latestDeployments.isEmpty && lastError == nil && !missingToken {
             menu.addItem(NSMenuItem(title: "No deployments found", action: nil, keyEquivalent: ""))
-        } else {
+        } else if !missingToken {
             for deployment in latestDeployments {
                 let title = menuTitle(for: deployment)
                 let item = NSMenuItem(
@@ -378,7 +390,7 @@ final class StatusItemController {
 
         menu.addItem(.separator())
 
-        let quitItem = NSMenuItem(title: "Quit Vercel Status", action: #selector(quitApp(_:)), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: "Quit Vercel Deployment Menu Bar", action: #selector(quitApp(_:)), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
     }

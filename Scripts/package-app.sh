@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")"/.. && pwd)
-PRODUCT_NAME="Vercel Status"
-BUILD_DIR="$ROOT/.build/arm64-apple-macosx/debug"
-EXECUTABLE="$BUILD_DIR/vercel-status-menubar"
+PRODUCT_NAME="Vercel Deployment Menu Bar"
+BUILD_DIR="$ROOT/.build/release"
+EXECUTABLE="$BUILD_DIR/vercel-deployment-menu-bar"
 APP_DIR="$ROOT/build/${PRODUCT_NAME}.app"
 
 rm -rf "$APP_DIR"
@@ -16,13 +16,15 @@ cat > "$APP_DIR/Contents/Info.plist" <<'INFO'
 <plist version="1.0">
 <dict>
     <key>CFBundleDisplayName</key>
-    <string>Vercel Status</string>
+    <string>Vercel Deployment Menu Bar</string>
     <key>CFBundleExecutable</key>
-    <string>vercel-status-menubar</string>
+    <string>vercel-deployment-menu-bar</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
-    <string>com.andrew.vercel-status-menubar</string>
+    <string>com.andrew.vercel-deployment-menu-bar</string>
     <key>CFBundleName</key>
-    <string>Vercel Status</string>
+    <string>Vercel Deployment Menu Bar</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -40,6 +42,11 @@ cat > "$APP_DIR/Contents/Info.plist" <<'INFO'
 INFO
 
 cp "$EXECUTABLE" "$APP_DIR/Contents/MacOS/"
-chmod +x "$APP_DIR/Contents/MacOS/vercel-status-menubar"
+chmod +x "$APP_DIR/Contents/MacOS/vercel-deployment-menu-bar"
+
+# Copy app icon if it exists
+if [ -f "$ROOT/Resources/AppIcon.icns" ]; then
+    cp "$ROOT/Resources/AppIcon.icns" "$APP_DIR/Contents/Resources/"
+fi
 
 printf 'App bundle created at %s\n' "$APP_DIR"

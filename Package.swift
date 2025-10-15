@@ -4,7 +4,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "vercel-status-menubar",
+    name: "vercel-deployment-menu-bar",
     platforms: [
         .macOS(.v13)
     ],
@@ -12,7 +12,7 @@ let package = Package(
         // Targets are the basic building blocks of a package, defining a module or a test suite.
         // Targets can depend on other targets in this package and products from dependencies.
         .executableTarget(
-            name: "vercel-status-menubar",
+            name: "vercel-deployment-menu-bar",
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("SwiftUI")

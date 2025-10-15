@@ -1,4 +1,4 @@
-# Vercel Status Menu Bar
+# Vercel Deployment Menu Bar
 
 A lightweight macOS menu bar app that monitors your Vercel deployment status in real-time.
 
@@ -38,16 +38,49 @@ cd vercel-deployment-menu-bar
 swift build -c release
 
 # Run the app
-.build/release/vercel-status-menubar
+.build/release/vercel-deployment-menu-bar
 ```
 
 ## Configuration
 
-1. Get your Vercel API token from [Vercel Account Settings](https://vercel.com/account/tokens)
-2. Click the menu bar icon
+### Step 1: Generate a Vercel API Token
+
+1. Go to [Vercel Account Settings → Tokens](https://vercel.com/account/tokens)
+2. Click "Create Token"
+3. Give your token a name (e.g., "Menu Bar App")
+4. Choose the scope:
+   - **Personal Account**: Select your personal account scope
+   - **Team Account**: Select the specific team you want to monitor
+5. Set an expiration date (optional but recommended)
+6. Click "Create Token"
+7. **Important**: Copy the token immediately - you won't be able to see it again!
+
+### Step 2: Configure the App
+
+1. Launch "Vercel Deployment Menu Bar" from your Applications folder
+2. Click the menu bar icon (upside-down triangle)
 3. Select "Preferences"
-4. Enter your API token
-5. The app will start monitoring your deployments automatically
+4. Enter your API token in the "Token" field
+
+### Step 3: Configure Team ID (Only if you scoped the token to a team)
+
+If you created a token scoped to a specific team, you **must** also enter your Team ID:
+
+1. In the Preferences window, locate the "Team ID" field
+2. To find your Team ID:
+   - Go to your [Vercel Dashboard](https://vercel.com/)
+   - Select your team from the dropdown
+   - Look at the URL - it will be: `https://vercel.com/[TEAM_ID]/~`
+   - The `[TEAM_ID]` is what you need (e.g., if the URL is `https://vercel.com/acme-corp/~`, your Team ID is `acme-corp`)
+   - Alternatively, go to Team Settings → General and find your Team Slug
+3. Enter the Team ID in the preferences
+4. Click save
+
+**Note**: If you used a personal account token, you can leave the Team ID field empty.
+
+### Step 4: Start Monitoring
+
+Once configured, the app will automatically start monitoring your deployments. The menu bar icon will update based on your latest deployment status.
 
 ## How It Works
 

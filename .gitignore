@@ -9,3 +9,7 @@ DerivedData/
 .netrc
 *.xcodeproj
 *.xcworkspace
+
+# IDE
+.idea/
+.vscode/
