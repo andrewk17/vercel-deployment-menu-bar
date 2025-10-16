@@ -37,9 +37,48 @@ cd vercel-deployment-menu-bar
 # Build the app
 swift build -c release
 
-# Run the app
-.build/release/vercel-deployment-menu-bar
+# Package as .app bundle (creates a signed and notarized app)
+./Scripts/package-app.sh
+
+# The app will be created at: build/Vercel Deployment Menu Bar.app
 ```
+
+#### For Developers: Code Signing & Notarization
+
+The app is properly code signed and notarized to prevent macOS Gatekeeper warnings. If you're building for distribution:
+
+1. **Prerequisites:**
+   - Apple Developer account ($99/year)
+   - Developer ID Application certificate installed
+   - App Store Connect API key for notarization
+
+2. **Setup App Store Connect API Key:**
+   ```bash
+   # Create directory for API key
+   mkdir -p ~/.private_keys
+
+   # Download your .p8 file from https://appstoreconnect.apple.com/access/api
+   # Move it to ~/.private_keys/
+
+   # Add to ~/.zshrc or ~/.bash_profile:
+   export APPLE_API_KEY_ID="your-key-id"
+   export APPLE_API_ISSUER="your-issuer-id"
+   export APPLE_API_KEY_PATH="$HOME/.private_keys/AuthKey_XXXXXXXXXX.p8"
+   ```
+
+3. **Build and notarize:**
+   ```bash
+   ./Scripts/package-app.sh
+   # The script will automatically sign and notarize the app
+   ```
+
+The build script will:
+- Sign the app with your Developer ID certificate
+- Submit to Apple's notary service
+- Staple the notarization ticket
+- Verify the signature
+
+If notarization credentials aren't configured, the script will still sign the app but skip notarization.
 
 ## Configuration
 

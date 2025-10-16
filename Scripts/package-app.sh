@@ -49,7 +49,21 @@ if [ -f "$ROOT/Resources/AppIcon.icns" ]; then
     cp "$ROOT/Resources/AppIcon.icns" "$APP_DIR/Contents/Resources/"
 fi
 
-# Sign the app with ad-hoc signature to prevent "damaged" errors
-codesign --force --deep --sign - "$APP_DIR"
+# Sign the app with Developer ID certificate
+SIGNING_IDENTITY="Developer ID Application: Andrew Kim (P44RGE92LU)"
+ENTITLEMENTS="$ROOT/Resources/entitlements.plist"
+
+echo "Signing app with identity: $SIGNING_IDENTITY"
+codesign --force --deep --options runtime \
+    --entitlements "$ENTITLEMENTS" \
+    --sign "$SIGNING_IDENTITY" \
+    --timestamp \
+    "$APP_DIR"
+
+# Verify the signature
+codesign --verify --deep --strict --verbose=2 "$APP_DIR"
 
 printf 'App bundle created at %s\n' "$APP_DIR"
+
+# Notarize the app (if credentials are configured)
+"$ROOT/Scripts/notarize-app.sh"
