@@ -49,4 +49,7 @@ if [ -f "$ROOT/Resources/AppIcon.icns" ]; then
     cp "$ROOT/Resources/AppIcon.icns" "$APP_DIR/Contents/Resources/"
 fi
 
+# Sign the app with ad-hoc signature to prevent "damaged" errors
+codesign --force --deep --sign - "$APP_DIR"
+
 printf 'App bundle created at %s\n' "$APP_DIR"
