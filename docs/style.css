@@ -1,0 +1,316 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+    color: #333;
+    background: #fff;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 20px;
+}
+
+/* Header */
+header {
+    padding: 20px 0;
+    border-bottom: 1px solid #eee;
+}
+
+nav {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.github-link {
+    color: #333;
+    text-decoration: none;
+    font-weight: 500;
+    padding: 8px 16px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    transition: all 0.2s;
+}
+
+.github-link:hover {
+    background: #f6f8fa;
+    border-color: #333;
+}
+
+/* Hero Section */
+.hero {
+    padding: 80px 0 60px;
+    text-align: center;
+}
+
+.hero h1 {
+    font-size: 48px;
+    font-weight: 700;
+    line-height: 1.2;
+    margin-bottom: 20px;
+    color: #000;
+}
+
+.subhead {
+    font-size: 20px;
+    color: #666;
+    margin-bottom: 40px;
+    max-width: 700px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.cta-buttons {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.btn {
+    display: inline-block;
+    padding: 14px 32px;
+    font-size: 16px;
+    font-weight: 600;
+    text-decoration: none;
+    border-radius: 8px;
+    transition: all 0.2s;
+}
+
+.btn-primary {
+    background: #000;
+    color: #fff;
+}
+
+.btn-primary:hover {
+    background: #333;
+    transform: translateY(-2px);
+}
+
+.btn-secondary {
+    background: #fff;
+    color: #000;
+    border: 1px solid #ddd;
+}
+
+.btn-secondary:hover {
+    background: #f6f8fa;
+    border-color: #333;
+    transform: translateY(-2px);
+}
+
+/* Screenshot Section */
+.screenshot-section {
+    padding: 40px 0 80px;
+    background: #f6f8fa;
+}
+
+.main-screenshot {
+    width: 100%;
+    max-width: 800px;
+    height: auto;
+    display: block;
+    margin: 0 auto;
+    border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+}
+
+/* Features Section */
+.features {
+    padding: 80px 0;
+}
+
+.features h2 {
+    font-size: 36px;
+    text-align: center;
+    margin-bottom: 50px;
+}
+
+.feature-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 40px;
+}
+
+.feature h3 {
+    font-size: 20px;
+    margin-bottom: 12px;
+    color: #000;
+}
+
+.feature p {
+    color: #666;
+    line-height: 1.7;
+}
+
+/* How-to Section */
+.how-to {
+    padding: 80px 0;
+    background: #f6f8fa;
+}
+
+.how-to h2 {
+    font-size: 36px;
+    text-align: center;
+    margin-bottom: 50px;
+}
+
+.step {
+    margin-bottom: 40px;
+}
+
+.step h3 {
+    font-size: 24px;
+    margin-bottom: 12px;
+    color: #000;
+}
+
+.step p {
+    color: #666;
+    line-height: 1.7;
+    margin-bottom: 12px;
+}
+
+.step ol {
+    margin-left: 20px;
+    color: #666;
+    line-height: 1.7;
+}
+
+.step ol li {
+    margin-bottom: 8px;
+}
+
+.step code {
+    background: #fff;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: 'Monaco', 'Courier New', monospace;
+    font-size: 14px;
+    color: #333;
+    border: 1px solid #ddd;
+}
+
+.step a {
+    color: #0070f3;
+    text-decoration: none;
+}
+
+.step a:hover {
+    text-decoration: underline;
+}
+
+/* Requirements Section */
+.requirements {
+    padding: 80px 0;
+}
+
+.requirements h2 {
+    font-size: 36px;
+    text-align: center;
+    margin-bottom: 30px;
+}
+
+.requirements ul {
+    max-width: 600px;
+    margin: 0 auto;
+    list-style: none;
+}
+
+.requirements li {
+    padding: 12px 0;
+    padding-left: 30px;
+    position: relative;
+    color: #666;
+    line-height: 1.7;
+}
+
+.requirements li:before {
+    content: "✓";
+    position: absolute;
+    left: 0;
+    color: #0070f3;
+    font-weight: bold;
+}
+
+/* Open Source Section */
+.open-source {
+    padding: 80px 0;
+    background: #f6f8fa;
+    text-align: center;
+}
+
+.open-source h2 {
+    font-size: 36px;
+    margin-bottom: 20px;
+}
+
+.open-source p {
+    font-size: 18px;
+    color: #666;
+    max-width: 700px;
+    margin: 0 auto;
+}
+
+.open-source a {
+    color: #0070f3;
+    text-decoration: none;
+}
+
+.open-source a:hover {
+    text-decoration: underline;
+}
+
+/* Footer */
+footer {
+    padding: 40px 0;
+    border-top: 1px solid #eee;
+    text-align: center;
+    color: #666;
+}
+
+footer p {
+    margin-bottom: 10px;
+}
+
+footer a {
+    color: #0070f3;
+    text-decoration: none;
+}
+
+footer a:hover {
+    text-decoration: underline;
+}
+
+.disclaimer {
+    font-size: 14px;
+    font-style: italic;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .hero h1 {
+        font-size: 36px;
+    }
+
+    .subhead {
+        font-size: 18px;
+    }
+
+    .features h2,
+    .how-to h2,
+    .requirements h2,
+    .open-source h2 {
+        font-size: 28px;
+    }
+
+    .feature-grid {
+        grid-template-columns: 1fr;
+    }
+}

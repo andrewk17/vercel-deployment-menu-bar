@@ -1,17 +1,15 @@
 # Vercel Deployment Menu Bar for macOS (Open Source)
 
-A lightweight macOS menu bar app to monitor Vercel deployment status in real-time. This open-source status bar app provides instant visibility into your Vercel deployments directly from the macOS menu bar.
+A lightweight **macOS menu bar app** to **monitor Vercel deployments** in real time — see build/ready/error status at a glance and jump to details with one click.
 
-![Vercel deployment status in macOS menu bar (build/ready/error states)](./vercel-menu-bar-deployment-status-macos.png)
+![Vercel deployment status in macOS menu bar showing build/ready/error states](./vercel-menu-bar-deployment-status-macos.png)
 
-## What It Does
-
-This app sits in your macOS menu bar and continuously monitors your Vercel deployments. It provides:
-
-- Real-time deployment status updates
-- Visual indicators for deployment states (building, ready, error, etc.)
-- Quick access to deployment information
-- Configurable API token through preferences
+**Features**
+- Real-time deployment status (build, ready, error)
+- Personal or Team tokens
+- Notarized, code-signed app (no Gatekeeper warnings)
+- Native Swift app — lightweight and fast
+- Quick access to deployment details from the menu bar
 
 ## Installation
 

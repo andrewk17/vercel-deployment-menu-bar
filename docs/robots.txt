@@ -1,0 +1,3 @@
+User-agent: *
+Disallow:
+Sitemap: https://andrewk17.github.io/vercel-deployment-menu-bar/sitemap.xml

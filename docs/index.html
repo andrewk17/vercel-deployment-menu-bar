@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Open-source macOS menu bar app to monitor Vercel deployment status in real time. Free developer tool with build/ready/error state monitoring.">
+    <meta name="keywords" content="vercel menu bar, vercel deployment status, vercel mac menu bar, monitor vercel deployments macos, vercel api token, vercel team id, vercel deploy monitor, mac status bar app, swift menu bar app, devops">
+    <title>Vercel Deployment Menu Bar for macOS - Monitor Vercel Deployments</title>
+    <link rel="stylesheet" href="style.css">
+
+    <!-- Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "Vercel Deployment Menu Bar",
+      "operatingSystem": "macOS 13+",
+      "applicationCategory": "DeveloperApplication",
+      "description": "Open-source macOS menu bar app to monitor Vercel deployment status in real time.",
+      "softwareVersion": "0.2.0",
+      "url": "https://andrewk17.github.io/vercel-deployment-menu-bar/",
+      "downloadUrl": "https://github.com/andrewk17/vercel-deployment-menu-bar/releases",
+      "screenshot": "https://andrewk17.github.io/vercel-deployment-menu-bar/img/vercel-menu-bar-deployment-status-macos.png",
+      "license": "https://opensource.org/licenses/MIT",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    }
+    </script>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <nav>
+                <a href="https://github.com/andrewk17/vercel-deployment-menu-bar" class="github-link">View on GitHub</a>
+            </nav>
+        </div>
+    </header>
+
+    <main>
+        <section class="hero">
+            <div class="container">
+                <h1>Monitor Vercel deployments from your macOS menu bar</h1>
+                <p class="subhead">Free &amp; open source. Real-time build/ready/error status. Works with personal &amp; team tokens.</p>
+
+                <div class="cta-buttons">
+                    <a href="https://github.com/andrewk17/vercel-deployment-menu-bar/releases/latest" class="btn btn-primary">Download for macOS</a>
+                    <a href="https://github.com/andrewk17/vercel-deployment-menu-bar" class="btn btn-secondary">View on GitHub</a>
+                </div>
+            </div>
+        </section>
+
+        <section class="screenshot-section">
+            <div class="container">
+                <img src="img/vercel-menu-bar-deployment-status-macos.png"
+                     alt="Vercel deployment status in macOS menu bar showing build, ready, and error states"
+                     class="main-screenshot">
+            </div>
+        </section>
+
+        <section class="features">
+            <div class="container">
+                <h2>Features</h2>
+                <div class="feature-grid">
+                    <div class="feature">
+                        <h3>Real-time Monitoring</h3>
+                        <p>Continuously monitors your Vercel deployments and updates the menu bar icon based on deployment states.</p>
+                    </div>
+                    <div class="feature">
+                        <h3>Visual Indicators</h3>
+                        <p>Clear status icons for building, ready, error, and other deployment states at a glance.</p>
+                    </div>
+                    <div class="feature">
+                        <h3>Personal & Team Support</h3>
+                        <p>Works with both personal Vercel accounts and team deployments using team-scoped tokens.</p>
+                    </div>
+                    <div class="feature">
+                        <h3>Lightweight & Native</h3>
+                        <p>Built with Swift and SwiftUI for optimal macOS performance. Minimal resource usage.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="how-to">
+            <div class="container">
+                <h2>How to Get Started</h2>
+
+                <div class="step">
+                    <h3>1. Download and Install</h3>
+                    <p>Download the latest release, unzip it, and move to your Applications folder. The app is properly code-signed and notarized.</p>
+                </div>
+
+                <div class="step">
+                    <h3>2. Generate a Vercel API Token</h3>
+                    <p>Go to <a href="https://vercel.com/account/tokens" target="_blank" rel="noopener">Vercel Account Settings → Tokens</a> and create a new Vercel API token. Choose either personal account or team scope for monitoring your Vercel deployments.</p>
+                </div>
+
+                <div class="step">
+                    <h3>3. Configure the App</h3>
+                    <p>Launch the app, click the menu bar icon, select "Preferences", and enter your API token. If using a team token, also enter your Team ID.</p>
+                </div>
+
+                <div class="step">
+                    <h3>Where do I find my Vercel Team ID?</h3>
+                    <p>If you're using a team-scoped token:</p>
+                    <ol>
+                        <li>Go to your <a href="https://vercel.com/" target="_blank" rel="noopener">Vercel Dashboard</a></li>
+                        <li>Select your team from the dropdown</li>
+                        <li>Look at the URL: <code>https://vercel.com/[TEAM_ID]/~</code></li>
+                        <li>The <code>[TEAM_ID]</code> is what you need (e.g., if the URL shows <code>https://vercel.com/acme-corp/~</code>, your Team ID is <code>acme-corp</code>)</li>
+                    </ol>
+                    <p>For personal accounts, leave the Team ID field empty.</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="requirements">
+            <div class="container">
+                <h2>Requirements</h2>
+                <ul>
+                    <li>macOS 13.0 or later</li>
+                    <li>Vercel API token (free to create)</li>
+                </ul>
+            </div>
+        </section>
+
+        <section class="open-source">
+            <div class="container">
+                <h2>Open Source</h2>
+                <p>Vercel Deployment Menu Bar is open source under the MIT License. View the source code, report issues, or contribute on <a href="https://github.com/andrewk17/vercel-deployment-menu-bar">GitHub</a>.</p>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p class="disclaimer">Not affiliated with Vercel Inc. Vercel is a trademark of Vercel Inc.</p>
+            <p>&copy; 2025 Vercel Deployment Menu Bar. Released under the <a href="https://opensource.org/licenses/MIT">MIT License</a>.</p>
+        </div>
+    </footer>
+</body>
+</html>
