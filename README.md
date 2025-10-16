@@ -1,8 +1,8 @@
-# Vercel Deployment Menu Bar
+# Vercel Deployment Menu Bar for macOS (Open Source)
 
-A lightweight macOS menu bar app that monitors your Vercel deployment status in real-time.
+A lightweight macOS menu bar app to monitor Vercel deployment status in real-time. This open-source status bar app provides instant visibility into your Vercel deployments directly from the macOS menu bar.
 
-![Screenshot](screenshot.png)
+![Vercel deployment status in macOS menu bar (build/ready/error states)](./vercel-menu-bar-deployment-status-macos.png)
 
 ## What It Does
 
@@ -137,6 +137,32 @@ The app uses the Vercel API to:
 ## License
 
 MIT License - see [LICENSE](LICENSE) file for details
+
+## FAQ
+
+### How do I monitor Vercel deployments from the macOS menu bar?
+
+Install the Vercel Deployment Menu Bar app, configure it with your Vercel API token, and it will automatically display real-time deployment status in your macOS menu bar. The app polls the Vercel API and updates the status icon based on your latest deployments.
+
+### Where do I find my Vercel Team ID?
+
+If you're using a team-scoped Vercel API token, you need to provide your Team ID:
+
+1. Go to your [Vercel Dashboard](https://vercel.com/)
+2. Select your team from the dropdown
+3. Look at the URL: `https://vercel.com/[TEAM_ID]/~`
+4. Copy the `[TEAM_ID]` portion (e.g., if the URL shows `https://vercel.com/acme-corp/~`, your Team ID is `acme-corp`)
+5. Alternatively, go to Team Settings → General to find your Team Slug
+
+Enter this Team ID in the app's Preferences. If you're using a personal account token, you can leave the Team ID field empty.
+
+### How do I fix the "damaged app" error on macOS?
+
+The latest releases (v0.2.0+) are properly code-signed and notarized, so you shouldn't see this error. If you do:
+
+1. Download the latest release from the [Releases](https://github.com/andrewshawcare/vercel-deployment-menu-bar/releases) page
+2. If the error persists, right-click the app and select "Open" instead of double-clicking
+3. For older versions, you may need to remove the quarantine attribute: `xattr -d com.apple.quarantine "/Applications/Vercel Deployment Menu Bar.app"`
 
 ## Contributing
 
