@@ -18,5 +18,9 @@ let package = Package(
                 .linkedFramework("SwiftUI")
             ]
         ),
+        .testTarget(
+            name: "vercel-deployment-menu-barTests",
+            dependencies: ["vercel-deployment-menu-bar"]
+        ),
     ]
 )

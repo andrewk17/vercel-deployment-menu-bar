@@ -372,7 +372,7 @@ final class StatusItemController {
                         item.representedObject = url
                     }
                 }
-                item.toolTip = deployment.meta?.githubCommitMessage ?? ""
+                item.toolTip = commitToolTip(for: deployment)
                 item.image = icon(for: deployment.state)
                 menu.addItem(item)
             }
@@ -453,5 +453,37 @@ final class StatusItemController {
         }
 
         return components.joined(separator: " — ")
+    }
+
+    private func commitToolTip(for deployment: Deployment) -> String? {
+        Self.sanitizedCommitToolTip(from: deployment.meta?.githubCommitMessage)
+    }
+
+    static func sanitizedCommitToolTip(from rawMessage: String?) -> String? {
+        guard let rawMessage else {
+            return nil
+        }
+
+        let firstLine = rawMessage
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first(where: { !$0.isEmpty }) ?? ""
+        guard !firstLine.isEmpty else {
+            return nil
+        }
+
+        let collapsed = firstLine
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !collapsed.isEmpty else {
+            return nil
+        }
+
+        let maxLength = 90
+        guard collapsed.count > maxLength else {
+            return collapsed
+        }
+        let cutoff = collapsed.index(collapsed.startIndex, offsetBy: maxLength - 1)
+        return String(collapsed[..<cutoff]) + "…"
     }
 }
