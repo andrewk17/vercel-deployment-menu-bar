@@ -53,8 +53,12 @@ final class StatusItemController {
     @objc private func openDashboard(_ sender: Any?) {
         let preferences = PreferencesStore.shared.current
         var urlString = "https://vercel.com/deployments"
-        if !preferences.teamId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            urlString = "https://vercel.com/\(preferences.teamId)/deployments"
+        let teamIds = preferences.teamIdList
+        if
+            teamIds.count == 1,
+            teamIds[0] != Preferences.personalScopeIdentifier
+        {
+            urlString = "https://vercel.com/\(teamIds[0])/deployments"
         }
         if let url = URL(string: urlString) {
             NSWorkspace.shared.open(url)
@@ -151,7 +155,14 @@ final class StatusItemController {
     }
 
     private func filterDeployments(_ deployments: [Deployment], with preferences: Preferences) -> [Deployment] {
+        let normalizedProjectNames = preferences.normalizedProjectNameSet
+
         var filtered = deployments.filter { deployment in
+            if !normalizedProjectNames.isEmpty {
+                let normalizedDeploymentName = deployment.name.lowercased()
+                guard normalizedProjectNames.contains(normalizedDeploymentName) else { return false }
+            }
+
             switch deployment.state {
             case .ready:
                 guard preferences.showReady else { return false }
@@ -344,18 +355,22 @@ final class StatusItemController {
                 )
                 item.target = self
 
-                // Build Vercel dashboard URL for this deployment
-                let preferences = PreferencesStore.shared.current
-                var dashboardURL: String
-                if !preferences.teamId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    dashboardURL = "https://vercel.com/\(preferences.teamId)/\(deployment.name)/\(deployment.uid)"
-                } else {
-                    // For personal accounts, try using the deployment URL to construct it
-                    dashboardURL = "https://vercel.com/\(deployment.name)/\(deployment.uid)"
-                }
-
-                if let url = URL(string: dashboardURL) {
+                if
+                    let inspectorUrl = deployment.inspectorUrl,
+                    !inspectorUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                    let url = URL(string: inspectorUrl)
+                {
                     item.representedObject = url
+                } else {
+                    let deploymentUrl: String
+                    if deployment.url.hasPrefix("http://") || deployment.url.hasPrefix("https://") {
+                        deploymentUrl = deployment.url
+                    } else {
+                        deploymentUrl = "https://\(deployment.url)"
+                    }
+                    if let url = URL(string: deploymentUrl) {
+                        item.representedObject = url
+                    }
                 }
                 item.toolTip = deployment.meta?.githubCommitMessage ?? ""
                 item.image = icon(for: deployment.state)

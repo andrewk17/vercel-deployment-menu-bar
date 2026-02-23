@@ -12,59 +12,222 @@ final class DeploymentService {
             throw APIError.missingToken
         }
 
-        // If team is explicitly provided, fetch only for that team.
-        if !preferences.teamId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        let teamIds = preferences.teamIdList
+        let projectNames = preferences.projectNameList
+        let singleProjectName = preferences.singleProjectName
+        let hasMultipleProjects = projectNames.count > 1
+
+        // Preserve strict error behavior for the single-team case.
+        if teamIds.count == 1 {
+            let resolvedTeamId = normalizedTeamID(from: teamIds[0])
+            if hasMultipleProjects {
+                let deployments = try await fetchDeploymentsForProjects(
+                    token: preferences.vercelToken,
+                    teamId: resolvedTeamId,
+                    projectNames: projectNames,
+                    limit: 100
+                )
+                return mergeAndSortDeployments(deployments)
+            }
+
             return try await fetchDeployments(
                 token: preferences.vercelToken,
-                teamId: preferences.teamId,
-                projectName: emptyToNil(preferences.projectName),
+                teamId: resolvedTeamId,
+                projectName: singleProjectName,
                 limit: 100
             )
+        }
+
+        // If team IDs are explicitly provided, fetch only those teams.
+        if !teamIds.isEmpty {
+            if hasMultipleProjects {
+                let deployments = await fetchDeploymentsForTeamsAndProjects(
+                    token: preferences.vercelToken,
+                    teamIds: teamIds,
+                    projectNames: projectNames,
+                    limit: 100
+                )
+                return mergeAndSortDeployments(deployments)
+            } else {
+                let deployments = await fetchDeploymentsForTeams(
+                    token: preferences.vercelToken,
+                    teamIds: teamIds,
+                    projectName: singleProjectName,
+                    limit: 100
+                )
+                return mergeAndSortDeployments(deployments)
+            }
         }
 
         // Otherwise, attempt to fetch across user + teams matching Raycast behavior.
         do {
             let teams = try await fetchTeams(token: preferences.vercelToken)
-            async let personalDeployments: [Deployment] = fetchDeployments(
-                token: preferences.vercelToken,
-                teamId: nil,
-                projectName: emptyToNil(preferences.projectName),
-                limit: 100
-            )
+            if hasMultipleProjects {
+                async let personalDeployments: [Deployment] = fetchDeploymentsForProjects(
+                    token: preferences.vercelToken,
+                    teamId: nil,
+                    projectNames: projectNames,
+                    limit: 100
+                )
 
-            let teamDeployments = try await withThrowingTaskGroup(of: [Deployment].self) { group -> [[Deployment]] in
-                for team in teams {
+                async let teamDeployments: [Deployment] = fetchDeploymentsForTeamsAndProjects(
+                    token: preferences.vercelToken,
+                    teamIds: teams.map(\.id),
+                    projectNames: projectNames,
+                    limit: 100
+                )
+
+                let combined = try await personalDeployments + teamDeployments
+                return mergeAndSortDeployments(combined)
+            } else {
+                async let personalDeployments: [Deployment] = fetchDeployments(
+                    token: preferences.vercelToken,
+                    teamId: nil,
+                    projectName: singleProjectName,
+                    limit: 100
+                )
+
+                async let teamDeployments: [Deployment] = fetchDeploymentsForTeams(
+                    token: preferences.vercelToken,
+                    teamIds: teams.map(\.id),
+                    projectName: singleProjectName,
+                    limit: 100
+                )
+
+                let combined = try await personalDeployments + teamDeployments
+                return mergeAndSortDeployments(combined)
+            }
+        } catch {
+            // If team fetch fails (scoped token), fallback to fetching without team.
+            if hasMultipleProjects {
+                let deployments = try await fetchDeploymentsForProjects(
+                    token: preferences.vercelToken,
+                    teamId: nil,
+                    projectNames: projectNames,
+                    limit: 100
+                )
+                return mergeAndSortDeployments(deployments)
+            } else {
+                return try await fetchDeployments(
+                    token: preferences.vercelToken,
+                    teamId: nil,
+                    projectName: singleProjectName,
+                    limit: 100
+                )
+            }
+        }
+    }
+
+    private func fetchDeploymentsForProjects(
+        token: String,
+        teamId: String?,
+        projectNames: [String],
+        limit: Int
+    ) async throws -> [Deployment] {
+        let outcome = await withTaskGroup(
+            of: Result<[Deployment], Error>.self,
+            returning: (deployments: [Deployment], successCount: Int, firstError: Error?).self
+        ) { group in
+            for projectName in projectNames {
+                group.addTask {
+                    do {
+                        let deployments = try await self.fetchDeployments(
+                            token: token,
+                            teamId: teamId,
+                            projectName: projectName,
+                            limit: limit
+                        )
+                        return .success(deployments)
+                    } catch {
+                        return .failure(error)
+                    }
+                }
+            }
+
+            var all: [Deployment] = []
+            var successCount = 0
+            var firstError: Error?
+
+            for await result in group {
+                switch result {
+                case let .success(deployments):
+                    successCount += 1
+                    all.append(contentsOf: deployments)
+                case let .failure(error):
+                    if firstError == nil {
+                        firstError = error
+                    }
+                }
+            }
+            return (all, successCount, firstError)
+        }
+
+        if outcome.successCount == 0, let firstError = outcome.firstError {
+            throw firstError
+        }
+
+        return outcome.deployments
+    }
+
+    private func fetchDeploymentsForTeams(
+        token: String,
+        teamIds: [String],
+        projectName: String?,
+        limit: Int
+    ) async -> [Deployment] {
+        await withTaskGroup(of: [Deployment].self) { group in
+            for teamId in teamIds {
+                group.addTask {
+                    do {
+                        return try await self.fetchDeployments(
+                            token: token,
+                            teamId: self.normalizedTeamID(from: teamId),
+                            projectName: projectName,
+                            limit: limit
+                        )
+                    } catch {
+                        return []
+                    }
+                }
+            }
+
+            var all: [Deployment] = []
+            for await deployments in group {
+                all.append(contentsOf: deployments)
+            }
+            return all
+        }
+    }
+
+    private func fetchDeploymentsForTeamsAndProjects(
+        token: String,
+        teamIds: [String],
+        projectNames: [String],
+        limit: Int
+    ) async -> [Deployment] {
+        await withTaskGroup(of: [Deployment].self) { group in
+            for teamId in teamIds {
+                for projectName in projectNames {
                     group.addTask {
                         do {
                             return try await self.fetchDeployments(
-                                token: preferences.vercelToken,
-                                teamId: team.id,
-                                projectName: emptyToNil(preferences.projectName),
-                                limit: 100
+                                token: token,
+                                teamId: self.normalizedTeamID(from: teamId),
+                                projectName: projectName,
+                                limit: limit
                             )
                         } catch {
                             return []
                         }
                     }
                 }
-
-                var all: [[Deployment]] = []
-                for try await deployments in group {
-                    all.append(deployments)
-                }
-                return all
             }
 
-            let combined = try await personalDeployments + teamDeployments.flatMap { $0 }
-            return combined.sorted { $0.created > $1.created }
-        } catch {
-            // If team fetch fails (scoped token), fallback to fetching without team.
-            return try await fetchDeployments(
-                token: preferences.vercelToken,
-                teamId: nil,
-                projectName: emptyToNil(preferences.projectName),
-                limit: 100
-            )
+            var all: [Deployment] = []
+            for await deployments in group {
+                all.append(contentsOf: deployments)
+            }
+            return all
         }
     }
 
@@ -136,9 +299,27 @@ final class DeploymentService {
         }
         return decoded.deployments
     }
-}
 
-private func emptyToNil(_ string: String) -> String? {
-    let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
-    return trimmed.isEmpty ? nil : trimmed
+    private func mergeAndSortDeployments(_ deployments: [Deployment]) -> [Deployment] {
+        var byUID: [String: Deployment] = [:]
+        for deployment in deployments {
+            if let current = byUID[deployment.uid] {
+                if deployment.created > current.created {
+                    byUID[deployment.uid] = deployment
+                }
+            } else {
+                byUID[deployment.uid] = deployment
+            }
+        }
+        return byUID.values.sorted { $0.created > $1.created }
+    }
+
+    private func normalizedTeamID(from rawTeamID: String) -> String? {
+        let trimmed = rawTeamID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if trimmed == Preferences.personalScopeIdentifier {
+            return nil
+        }
+        return trimmed
+    }
 }

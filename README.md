@@ -7,6 +7,7 @@ A lightweight **macOS menu bar app** to **monitor Vercel deployments** in real t
 **Features**
 - Real-time deployment status (build, ready, error)
 - Personal or Team tokens
+- Comma-separated team and project filters
 - Notarized, code-signed app (no Gatekeeper warnings)
 - Native Swift app — lightweight and fast
 - Quick access to deployment details from the menu bar
@@ -99,23 +100,30 @@ If notarization credentials aren't configured, the script will still sign the ap
 3. Select "Preferences"
 4. Enter your API token in the "Token" field
 
-### Step 3: Configure Team ID (Only if you scoped the token to a team)
+### Step 3: Configure Team ID(s) (Only if you scoped the token to a team)
 
 If you created a token scoped to a specific team, you **must** also enter your Team ID:
 
-1. In the Preferences window, locate the "Team ID" field
+1. In the Preferences window, locate the "Team ID(s)" field
 2. To find your Team ID:
    - Go to your [Vercel Dashboard](https://vercel.com/)
    - Select your team from the dropdown
    - Look at the URL - it will be: `https://vercel.com/[TEAM_ID]/~`
    - The `[TEAM_ID]` is what you need (e.g., if the URL is `https://vercel.com/acme-corp/~`, your Team ID is `acme-corp`)
    - Alternatively, go to Team Settings → General and find your Team Slug
-3. Enter the Team ID in the preferences
+3. Enter one Team ID, or multiple Team IDs as comma-separated values (e.g., `acme-corp, studio-team`)
 4. Click save
 
-**Note**: If you used a personal account token, you can leave the Team ID field empty.
+**Note**: If you used a personal account token, you can leave the Team ID(s) field empty.
 
-### Step 4: Start Monitoring
+### Step 4: Optional Project Name Filter
+
+To only show specific projects, set "Project Name(s)" in Preferences:
+
+1. Enter one project name, or multiple as comma-separated values (e.g., `web-app, api`)
+2. Only deployments from those projects will be shown
+
+### Step 5: Start Monitoring
 
 Once configured, the app will automatically start monitoring your deployments. The menu bar icon will update based on your latest deployment status.
 
@@ -152,7 +160,7 @@ If you're using a team-scoped Vercel API token, you need to provide your Team ID
 4. Copy the `[TEAM_ID]` portion (e.g., if the URL shows `https://vercel.com/acme-corp/~`, your Team ID is `acme-corp`)
 5. Alternatively, go to Team Settings → General to find your Team Slug
 
-Enter this Team ID in the app's Preferences. If you're using a personal account token, you can leave the Team ID field empty.
+Enter this Team ID in the app's Preferences. You can also enter multiple Team IDs as comma-separated values. If you're using a personal account token, you can leave the Team ID(s) field empty.
 
 ### How do I fix the "damaged app" error on macOS?
 

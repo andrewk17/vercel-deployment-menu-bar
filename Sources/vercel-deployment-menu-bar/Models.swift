@@ -1,6 +1,8 @@
 import Foundation
 
 struct Preferences: Codable, Equatable {
+    static let personalScopeIdentifier = "__personal__"
+
     var vercelToken: String
     var teamId: String
     var projectName: String
@@ -39,11 +41,45 @@ struct Preferences: Codable, Equatable {
         !vercelToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    var teamIdList: [String] {
+        commaSeparatedList(from: teamId)
+    }
+
+    var projectNameList: [String] {
+        commaSeparatedList(from: projectName)
+    }
+
+    var normalizedProjectNameSet: Set<String> {
+        Set(projectNameList.map { $0.lowercased() })
+    }
+
+    var singleProjectName: String? {
+        let projects = projectNameList
+        guard projects.count == 1 else { return nil }
+        return projects[0]
+    }
+
     var branchList: [String] {
         gitBranches
             .split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
             .filter { !$0.isEmpty }
+    }
+
+    private func commaSeparatedList(from value: String) -> [String] {
+        var results: [String] = []
+        var seen: Set<String> = []
+
+        for token in value.split(separator: ",") {
+            let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+
+            let normalized = trimmed.lowercased()
+            guard seen.insert(normalized).inserted else { continue }
+            results.append(trimmed)
+        }
+
+        return results
     }
 }
 
@@ -101,6 +137,15 @@ struct TeamsResponse: Decodable {
     let teams: [Team]
 }
 
+struct Project: Decodable {
+    let id: String
+    let name: String
+}
+
+struct ProjectsResponse: Decodable {
+    let projects: [Project]
+}
+
 struct Deployment: Decodable {
     enum State: String, Decodable {
         case building = "BUILDING"
@@ -134,6 +179,7 @@ struct Deployment: Decodable {
     let uid: String
     let name: String
     let url: String
+    let inspectorUrl: String?
     let created: TimeInterval
     let state: State
     let ready: TimeInterval?
@@ -147,6 +193,7 @@ struct Deployment: Decodable {
         case uid
         case name
         case url
+        case inspectorUrl
         case created
         case state
         case ready
