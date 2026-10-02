@@ -4,8 +4,15 @@ struct Preferences: Codable, Equatable {
     static let personalScopeIdentifier = "__personal__"
 
     var vercelToken: String
+    /// Comma-separated Vercel team IDs; empty means all accessible scopes.
     var teamId: String
+    /// Comma-separated Vercel project names; empty means all.
     var projectName: String
+    var cloudflareToken: String
+    /// Comma-separated Cloudflare account IDs; empty means all accessible accounts.
+    var cloudflareAccountIds: String
+    /// Comma-separated Worker names; empty means all.
+    var cloudflareWorkers: String
     var gitBranches: String
     var showProduction: Bool
     var showPreview: Bool
@@ -23,6 +30,9 @@ struct Preferences: Codable, Equatable {
         vercelToken: "",
         teamId: "",
         projectName: "",
+        cloudflareToken: "",
+        cloudflareAccountIds: "",
+        cloudflareWorkers: "",
         gitBranches: "",
         showProduction: true,
         showPreview: true,
@@ -37,8 +47,12 @@ struct Preferences: Codable, Equatable {
         refreshIntervalBuilding: 2
     )
 
-    var hasToken: Bool {
+    var hasVercelToken: Bool {
         !vercelToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var hasCloudflareToken: Bool {
+        !cloudflareToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var teamIdList: [String] {
@@ -49,8 +63,12 @@ struct Preferences: Codable, Equatable {
         commaSeparatedList(from: projectName)
     }
 
-    var normalizedProjectNameSet: Set<String> {
-        Set(projectNameList.map { $0.lowercased() })
+    var cloudflareAccountIdList: [String] {
+        commaSeparatedList(from: cloudflareAccountIds)
+    }
+
+    var cloudflareWorkerList: [String] {
+        commaSeparatedList(from: cloudflareWorkers)
     }
 
     var branchList: [String] {
@@ -71,6 +89,40 @@ struct Preferences: Codable, Equatable {
         }
 
         return results
+    }
+}
+
+extension Preferences {
+    /// Missing keys fall back to defaults so preferences saved by older versions still load.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = Preferences.default
+
+        func value<T: Decodable>(_ key: CodingKeys, _ fallback: T) throws -> T {
+            try container.decodeIfPresent(T.self, forKey: key) ?? fallback
+        }
+
+        self.init(
+            vercelToken: try value(.vercelToken, defaults.vercelToken),
+            teamId: try value(.teamId, defaults.teamId),
+            projectName: try value(.projectName, defaults.projectName),
+            cloudflareToken: try value(.cloudflareToken, defaults.cloudflareToken),
+            cloudflareAccountIds: try value(.cloudflareAccountIds, defaults.cloudflareAccountIds),
+            cloudflareWorkers: try value(.cloudflareWorkers, defaults.cloudflareWorkers),
+            gitBranches: try value(.gitBranches, defaults.gitBranches),
+            showProduction: try value(.showProduction, defaults.showProduction),
+            showPreview: try value(.showPreview, defaults.showPreview),
+            showReady: try value(.showReady, defaults.showReady),
+            showBuilding: try value(.showBuilding, defaults.showBuilding),
+            showError: try value(.showError, defaults.showError),
+            showQueued: try value(.showQueued, defaults.showQueued),
+            showCanceled: try value(.showCanceled, defaults.showCanceled),
+            // A missing optional was saved as nil (cleared), so it stays nil.
+            limitByCount: try container.decodeIfPresent(Int.self, forKey: .limitByCount),
+            limitByHours: try container.decodeIfPresent(Int.self, forKey: .limitByHours),
+            refreshIntervalIdle: try container.decodeIfPresent(Int.self, forKey: .refreshIntervalIdle),
+            refreshIntervalBuilding: try container.decodeIfPresent(Int.self, forKey: .refreshIntervalBuilding)
+        )
     }
 }
 

@@ -10,10 +10,10 @@ final class StatusItemController {
     private var refreshTimer: Timer?
     private var tickTimer: Timer?
     private var refreshTask: Task<Void, Never>?
-    private var latestDeployments: [VercelDeployment] = []
-    private var lastError: Error?
+    private var latestDeployments: [Deployment] = []
+    private var errors: [Deployment.Provider: Error] = [:]
+    private var configuredProviders: [Deployment.Provider] = []
     private var lastFetchDate: Date?
-    private var missingToken = false
 
     private var preferencesObserver: NSObjectProtocol?
 
@@ -55,18 +55,7 @@ final class StatusItemController {
         refreshDeployments(restartInFlight: true)
     }
 
-    @objc private func openDashboard(_ sender: Any?) {
-        let teamIds = PreferencesStore.shared.current.teamIdList
-        var urlString = "https://vercel.com/deployments"
-        if teamIds.count == 1, teamIds[0] != Preferences.personalScopeIdentifier {
-            urlString = "https://vercel.com/\(teamIds[0])/deployments"
-        }
-        if let url = URL(string: urlString) {
-            NSWorkspace.shared.open(url)
-        }
-    }
-
-    @objc private func openDeployment(_ sender: NSMenuItem) {
+    @objc private func openURL(_ sender: NSMenuItem) {
         guard let url = sender.representedObject as? URL else { return }
         NSWorkspace.shared.open(url)
     }
@@ -94,7 +83,7 @@ final class StatusItemController {
     private func scheduleNextRefresh() {
         refreshTimer?.invalidate()
         let preferences = PreferencesStore.shared.current
-        let hasActiveBuild = latestDeployments.contains { $0.state == .building || $0.state == .queued }
+        let hasActiveBuild = latestDeployments.contains { $0.state.isActive }
         let seconds = hasActiveBuild
             ? preferences.refreshIntervalBuilding ?? 2
             : preferences.refreshIntervalIdle ?? 15
@@ -123,35 +112,25 @@ final class StatusItemController {
 
         refreshTimer?.invalidate()
         let preferences = PreferencesStore.shared.current
+        configuredProviders = deploymentService.configuredProviders(preferences)
 
-        guard preferences.hasToken else {
+        guard !configuredProviders.isEmpty else {
             refreshTask = nil
             latestDeployments = []
-            lastError = nil
-            missingToken = true
+            errors = [:]
             render()
             return
         }
 
         refreshTask = Task {
-            let result: Result<[VercelDeployment], Error>
-            do {
-                result = .success(try await deploymentService.fetchAllDeployments(preferences: preferences))
-            } catch {
-                result = .failure(error)
-            }
+            let snapshot = await deploymentService.fetch(preferences: preferences)
             guard !Task.isCancelled else { return }
 
-            switch result {
-            case let .success(deployments):
-                latestDeployments = DeploymentFilter(preferences: preferences).apply(to: deployments)
-                lastError = nil
+            latestDeployments = DeploymentFilter(preferences: preferences).apply(to: snapshot.deployments)
+            errors = snapshot.errors
+            if snapshot.errors.count < configuredProviders.count {
                 lastFetchDate = Date()
-            case let .failure(error):
-                latestDeployments = []
-                lastError = error
             }
-            missingToken = false
             refreshTask = nil
             render()
             scheduleNextRefresh()
@@ -168,36 +147,37 @@ final class StatusItemController {
     private func updateStatusButton() {
         guard let button = statusItem.button else { return }
 
-        if missingToken {
+        // An in-progress build is the most useful thing to show, even if a newer one finished.
+        if let shown = latestDeployments.first(where: { $0.state.isActive }) ?? latestDeployments.first {
+            button.image = StatusIcon.image(for: shown.state)
+            button.title = statusTitle(for: shown)
+        } else if configuredProviders.isEmpty {
             button.title = "No Token"
             button.image = NSImage(systemSymbolName: "key.slash", accessibilityDescription: nil)
-        } else if lastError != nil {
+        } else if !errors.isEmpty {
             button.title = "Error"
             button.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: nil)
-        } else if let latest = latestDeployments.first {
-            button.image = StatusIcon.image(for: latest.state)
-            button.title = statusTitle(for: latest)
         } else {
             button.title = "VRC"
             button.image = NSImage(systemSymbolName: "circle", accessibilityDescription: nil)
         }
     }
 
-    private func statusTitle(for deployment: VercelDeployment) -> String {
-        let label = String(deployment.name.prefix(3)).uppercased()
+    private func statusTitle(for deployment: Deployment) -> String {
+        let label = String(deployment.projectName.prefix(3)).uppercased()
         guard let duration = elapsedDuration(for: deployment) else { return label }
         return "\(label) \(Formatting.duration(duration))"
     }
 
     /// Time spent building so far, or the final build time once finished.
-    private func elapsedDuration(for deployment: VercelDeployment) -> TimeInterval? {
+    private func elapsedDuration(for deployment: Deployment) -> TimeInterval? {
         switch deployment.state {
         case .building:
-            return Date().timeIntervalSince(deployment.buildingAtDate)
+            return Date().timeIntervalSince(deployment.buildStartedAt)
         case .queued:
-            return Date().timeIntervalSince(deployment.createdDate)
+            return Date().timeIntervalSince(deployment.createdAt)
         case .ready, .error:
-            return deployment.readyDate.map { max($0.timeIntervalSince(deployment.buildingAtDate), 0) }
+            return deployment.finishedAt.map { max($0.timeIntervalSince(deployment.buildStartedAt), 0) }
         case .canceled, .unknown:
             return nil
         }
@@ -206,25 +186,29 @@ final class StatusItemController {
     private func buildMenu() {
         menu.removeAllItems()
 
-        if missingToken {
-            menu.addItem(disabledItem("Add your Vercel token in Preferences"))
+        if configuredProviders.isEmpty {
+            menu.addItem(disabledItem("Add a Vercel or Cloudflare token in Preferences"))
             menu.addItem(.separator())
-        } else if let lastError {
-            menu.addItem(disabledItem("Error: \(lastError.localizedDescription)"))
-            menu.addItem(.separator())
-        } else if latestDeployments.isEmpty {
-            menu.addItem(disabledItem("No deployments found"))
+        } else {
+            for provider in Deployment.Provider.allCases {
+                guard let error = errors[provider] else { continue }
+                menu.addItem(disabledItem("\(provider.rawValue) error: \(error.localizedDescription)"))
+            }
+            if latestDeployments.isEmpty, errors.isEmpty {
+                menu.addItem(disabledItem("No deployments found"))
+            }
+            if !errors.isEmpty, !latestDeployments.isEmpty {
+                menu.addItem(.separator())
+            }
         }
 
-        if !missingToken {
-            for deployment in latestDeployments {
-                let item = NSMenuItem(title: menuTitle(for: deployment), action: #selector(openDeployment(_:)), keyEquivalent: "")
-                item.target = self
-                item.representedObject = deployment.link
-                item.toolTip = Self.sanitizedCommitToolTip(from: deployment.commitMessage)
-                item.image = StatusIcon.image(for: deployment.state)
-                menu.addItem(item)
-            }
+        for deployment in latestDeployments {
+            let item = NSMenuItem(title: menuTitle(for: deployment), action: #selector(openURL(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = deployment.link
+            item.toolTip = Self.sanitizedCommitToolTip(from: deployment.commitMessage)
+            item.image = StatusIcon.image(for: deployment.state)
+            menu.addItem(item)
         }
 
         if let lastFetchDate {
@@ -234,10 +218,32 @@ final class StatusItemController {
 
         menu.addItem(.separator())
         menu.addItem(actionItem("Refresh Now", #selector(refreshFromMenu(_:)), key: "r"))
-        menu.addItem(actionItem("Open Vercel Dashboard", #selector(openDashboard(_:))))
+        let preferences = PreferencesStore.shared.current
+        for provider in configuredProviders {
+            let item = actionItem("Open \(provider.rawValue) Dashboard", #selector(openURL(_:)))
+            item.representedObject = dashboardURL(for: provider, preferences: preferences)
+            menu.addItem(item)
+        }
         menu.addItem(actionItem("Preferences…", #selector(openPreferences(_:)), key: ","))
         menu.addItem(.separator())
         menu.addItem(actionItem("Quit Vercel Deployment Menu Bar", #selector(quitApp(_:)), key: "q"))
+    }
+
+    private func dashboardURL(for provider: Deployment.Provider, preferences: Preferences) -> URL? {
+        switch provider {
+        case .vercel:
+            let teamIds = preferences.teamIdList
+            if teamIds.count == 1, teamIds[0] != Preferences.personalScopeIdentifier {
+                return URL(string: "https://vercel.com/\(teamIds[0])/deployments")
+            }
+            return URL(string: "https://vercel.com/deployments")
+        case .cloudflare:
+            let accountIds = preferences.cloudflareAccountIdList
+            if accountIds.count == 1 {
+                return URL(string: "https://dash.cloudflare.com/\(accountIds[0])/workers-and-pages")
+            }
+            return URL(string: "https://dash.cloudflare.com/")
+        }
     }
 
     private func disabledItem(_ title: String) -> NSMenuItem {
@@ -252,20 +258,23 @@ final class StatusItemController {
         return item
     }
 
-    private func menuTitle(for deployment: VercelDeployment) -> String {
-        let name = deployment.branch.map { "\(deployment.name) (\($0))" } ?? deployment.name
+    private func menuTitle(for deployment: Deployment) -> String {
+        let name = deployment.branch.map { "\(deployment.projectName) (\($0))" } ?? deployment.projectName
 
         var statusParts: [String] = []
+        if configuredProviders.count > 1 {
+            statusParts.append(deployment.provider.rawValue)
+        }
         if let target = deployment.target {
-            statusParts.append(target.capitalized)
+            statusParts.append(target.rawValue)
         }
         statusParts.append(statusDescription(for: deployment))
-        statusParts.append(Formatting.time(deployment.buildingAtDate))
+        statusParts.append(Formatting.time(deployment.buildStartedAt))
 
         return "\(name) — \(statusParts.joined(separator: " • "))"
     }
 
-    private func statusDescription(for deployment: VercelDeployment) -> String {
+    private func statusDescription(for deployment: Deployment) -> String {
         let duration = elapsedDuration(for: deployment).map { " \(Formatting.duration($0))" } ?? ""
         switch deployment.state {
         case .building: return "Building\(duration)"
@@ -332,9 +341,9 @@ private enum Formatting {
 
 @MainActor
 private enum StatusIcon {
-    private static var cache: [VercelDeployment.State: NSImage] = [:]
+    private static var cache: [Deployment.State: NSImage] = [:]
 
-    static func image(for state: VercelDeployment.State) -> NSImage? {
+    static func image(for state: Deployment.State) -> NSImage? {
         if let cached = cache[state] {
             return cached
         }

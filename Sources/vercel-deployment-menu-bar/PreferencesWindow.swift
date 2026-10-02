@@ -15,7 +15,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
             defer: false
         )
         window.center()
-        window.title = "Vercel Status Preferences"
+        window.title = "Deployment Status Preferences"
         super.init(window: window)
         window.contentViewController = NSHostingController(rootView: PreferencesView(viewModel: viewModel))
         window.delegate = self
@@ -40,29 +40,16 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
 
 struct PreferencesView: View {
     @ObservedObject var viewModel: PreferencesViewModel
-    @State private var showToken = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                PreferencesSection("Authentication") {
-                    LabeledField("Vercel API Token") {
-                        HStack(spacing: 10) {
-                            if showToken {
-                                TextField("", text: $viewModel.vercelToken, prompt: Text("Enter your token"))
-                                    .textFieldStyle(.roundedBorder)
-                                    .font(.system(.body, design: .monospaced))
-                            } else {
-                                PasteableSecureField(text: $viewModel.vercelToken, placeholder: "Enter your token")
-                            }
-
-                            Button(showToken ? "Hide" : "Show") {
-                                showToken.toggle()
-                            }
-                            .buttonStyle(.bordered)
-                        }
-                        .help("Required. Create a token at vercel.com/account/tokens with 'Read Deployments' permission.")
-                    }
+                PreferencesSection("Vercel") {
+                    TokenField(
+                        label: "API Token",
+                        token: $viewModel.vercelToken,
+                        help: "Create a token at vercel.com/account/tokens. Leave blank to hide Vercel deployments."
+                    )
 
                     HStack {
                         Text("Scope & Project")
@@ -70,9 +57,9 @@ struct PreferencesView: View {
                             .foregroundStyle(.secondary)
                         Spacer()
                         Button("Refresh") {
-                            viewModel.refreshRemoteOptions(reloadTeams: true)
+                            viewModel.refreshVercelOptions(reloadTeams: true)
                         }
-                        .disabled(!viewModel.hasToken || viewModel.teamsLoading || viewModel.projectsLoading)
+                        .disabled(!viewModel.hasVercelToken || viewModel.teamsLoading || viewModel.projectsLoading)
                     }
 
                     SelectionList(
@@ -99,8 +86,59 @@ struct PreferencesView: View {
                         isLoading: viewModel.projectsLoading
                     )
 
-                    if let optionsErrorMessage = viewModel.optionsErrorMessage {
-                        Text("Couldn’t refresh scopes/projects: \(optionsErrorMessage)")
+                    if let message = viewModel.vercelOptionsErrorMessage {
+                        Text("Couldn’t refresh scopes/projects: \(message)")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                }
+
+                PreferencesSection("Cloudflare Workers Builds") {
+                    TokenField(
+                        label: "User API Token",
+                        token: $viewModel.cloudflareToken,
+                        help: "Create a user API token at dash.cloudflare.com/profile/api-tokens with Workers Builds Configuration: Read and Workers Scripts: Read. Leave blank to hide Cloudflare builds."
+                    )
+
+                    HStack {
+                        Text("Accounts & Workers")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Refresh") {
+                            viewModel.refreshCloudflareOptions()
+                        }
+                        .disabled(!viewModel.hasCloudflareToken || viewModel.cloudflareLoading)
+                    }
+
+                    SelectionList(
+                        title: "Accounts",
+                        allLabel: "All Accessible Accounts",
+                        selectedLabel: "Choose Specific Accounts",
+                        loadingLabel: "Loading accounts…",
+                        emptyLabel: "No accounts available for this token.",
+                        mode: $viewModel.cloudflareAccountMode,
+                        selection: $viewModel.selectedCloudflareAccountIDs,
+                        options: viewModel.availableCloudflareAccounts,
+                        isLoading: viewModel.cloudflareLoading
+                    )
+
+                    SelectionList(
+                        title: "Workers",
+                        allLabel: "All Workers",
+                        selectedLabel: "Choose Specific Workers",
+                        loadingLabel: "Loading Workers…",
+                        emptyLabel: "No Workers found for the selected account(s).",
+                        mode: $viewModel.cloudflareWorkerMode,
+                        selection: $viewModel.selectedCloudflareWorkers,
+                        options: viewModel.availableCloudflareWorkers,
+                        isLoading: viewModel.cloudflareLoading
+                    )
+
+                    Footnote("Shows Workers connected to a git repository with Workers Builds. Workers deployed directly with wrangler have no builds to show.")
+
+                    if let message = viewModel.cloudflareOptionsErrorMessage {
+                        Text("Couldn’t refresh accounts/Workers: \(message)")
                             .font(.caption)
                             .foregroundStyle(.orange)
                     }
@@ -181,6 +219,33 @@ struct PreferencesView: View {
         }
         .frame(minWidth: 560, minHeight: 760)
         .background(Color(nsColor: .windowBackgroundColor))
+    }
+}
+
+private struct TokenField: View {
+    let label: String
+    @Binding var token: String
+    let help: String
+    @State private var isRevealed = false
+
+    var body: some View {
+        LabeledField(label) {
+            HStack(spacing: 10) {
+                if isRevealed {
+                    TextField("", text: $token, prompt: Text("Enter your token"))
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(.body, design: .monospaced))
+                } else {
+                    PasteableSecureField(text: $token, placeholder: "Enter your token")
+                }
+
+                Button(isRevealed ? "Hide" : "Show") {
+                    isRevealed.toggle()
+                }
+                .buttonStyle(.bordered)
+            }
+            .help(help)
+        }
     }
 }
 
@@ -295,6 +360,13 @@ private struct SelectionList: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color(nsColor: .textBackgroundColor).opacity(0.5))
                     .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                    // An empty selection is saved as "all".
+                    if selection.isEmpty {
+                        Text("Nothing selected, so all are shown.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
         }

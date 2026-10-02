@@ -1,18 +1,19 @@
 import Foundation
 
-final class DeploymentService {
+final class VercelDeploymentProvider: DeploymentProvider {
+    let kind = Deployment.Provider.vercel
     private let client: VercelClient
 
     init(client: VercelClient = VercelClient()) {
         self.client = client
     }
 
-    /// Fetches deployments for every configured (scope, project) pair, newest first.
-    func fetchAllDeployments(preferences: Preferences) async throws -> [VercelDeployment] {
-        guard preferences.hasToken else {
-            throw APIError.missingToken
-        }
+    func isConfigured(_ preferences: Preferences) -> Bool {
+        preferences.hasVercelToken
+    }
 
+    /// Fetches deployments for every configured (scope, project) pair.
+    func fetchDeployments(preferences: Preferences) async throws -> [Deployment] {
         let token = preferences.vercelToken
         let scopes = await resolveScopes(preferences: preferences)
         let projects: [String?] = preferences.projectNameList.isEmpty ? [nil] : preferences.projectNameList
@@ -25,7 +26,7 @@ final class DeploymentService {
         var seen: Set<String> = []
         return deployments
             .filter { seen.insert($0.uid).inserted }
-            .sorted { $0.created > $1.created }
+            .map(\.asDeployment)
     }
 
     /// Team IDs to query, where `nil` is the personal scope. Uses the configured scopes when set,

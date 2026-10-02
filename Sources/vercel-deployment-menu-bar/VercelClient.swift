@@ -50,29 +50,39 @@ struct VercelDeployment: Decodable {
 }
 
 extension VercelDeployment {
-    var createdDate: Date {
-        Date(timeIntervalSince1970: created / 1000)
-    }
-
-    var readyDate: Date? {
-        ready.map { Date(timeIntervalSince1970: $0 / 1000) }
-    }
-
-    var buildingAtDate: Date {
-        Date(timeIntervalSince1970: (buildingAt ?? created) / 1000)
-    }
-
-    var branch: String? {
+    var asDeployment: Deployment {
+        let createdAt = Date(timeIntervalSince1970: created / 1000)
         let ref = gitSource?.ref ?? meta?.githubCommitRef
-        return ref?.isEmpty == false ? ref : nil
+
+        return Deployment(
+            id: uid,
+            provider: .vercel,
+            projectName: name,
+            state: deploymentState,
+            // Vercel reports preview deployments with a null target.
+            target: target?.lowercased() == "production" ? .production : .preview,
+            branch: ref?.isEmpty == false ? ref : nil,
+            commitMessage: meta?.githubCommitMessage,
+            createdAt: createdAt,
+            buildStartedAt: buildingAt.map { Date(timeIntervalSince1970: $0 / 1000) } ?? createdAt,
+            finishedAt: ready.map { Date(timeIntervalSince1970: $0 / 1000) },
+            link: link
+        )
     }
 
-    var commitMessage: String? {
-        meta?.githubCommitMessage
+    private var deploymentState: Deployment.State {
+        switch state {
+        case .building: return .building
+        case .error: return .error
+        case .ready: return .ready
+        case .queued: return .queued
+        case .canceled: return .canceled
+        case .unknown: return .unknown
+        }
     }
 
     /// The inspector page when available, otherwise the deployment itself.
-    var link: URL? {
+    private var link: URL? {
         if let inspectorUrl, let url = URL(string: inspectorUrl.trimmingCharacters(in: .whitespacesAndNewlines)), url.scheme != nil {
             return url
         }
@@ -80,40 +90,22 @@ extension VercelDeployment {
     }
 }
 
-enum APIError: LocalizedError {
-    case missingToken
-    case invalidResponse(status: Int, message: String)
-    case decodingFailure
-
-    var errorDescription: String? {
-        switch self {
-        case .missingToken:
-            return "Vercel token is missing. Please update Preferences."
-        case let .invalidResponse(status, message):
-            return "Vercel API error (\(status)): \(message)"
-        case .decodingFailure:
-            return "Failed to decode response from Vercel."
-        }
-    }
-}
-
 final class VercelClient {
-    private static let baseURL = "https://api.vercel.com"
     private static let pageSize = 100
 
-    private let session: URLSession
+    private let http: HTTPClient
 
     init(session: URLSession = .shared) {
-        self.session = session
+        http = HTTPClient(service: "Vercel", baseURL: "https://api.vercel.com", session: session)
     }
 
     func teams(token: String) async throws -> [VercelTeam] {
-        let response: TeamsResponse = try await get("/v2/teams", token: token)
+        let response: TeamsResponse = try await http.get("/v2/teams", token: token)
         return response.teams
     }
 
     func projects(token: String, teamId: String?) async throws -> [VercelProject] {
-        let response: ProjectsResponse = try await get(
+        let response: ProjectsResponse = try await http.get(
             "/v9/projects",
             query: ["limit": "\(Self.pageSize)", "teamId": teamId],
             token: token
@@ -122,40 +114,12 @@ final class VercelClient {
     }
 
     func deployments(token: String, teamId: String?, projectName: String?) async throws -> [VercelDeployment] {
-        let response: DeploymentsResponse = try await get(
+        let response: DeploymentsResponse = try await http.get(
             "/v6/deployments",
             query: ["limit": "\(Self.pageSize)", "teamId": teamId, "app": projectName],
             token: token
         )
         return response.deployments
-    }
-
-    private func get<Response: Decodable>(
-        _ path: String,
-        query: [String: String?] = [:],
-        token: String
-    ) async throws -> Response {
-        var components = URLComponents(string: Self.baseURL + path)!
-        let queryItems = query
-            .compactMap { name, value in value.flatMap { $0.isEmpty ? nil : URLQueryItem(name: name, value: $0) } }
-            .sorted { $0.name < $1.name }
-        components.queryItems = queryItems.isEmpty ? nil : queryItems
-
-        var request = URLRequest(url: components.url!)
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-
-        let (data, response) = try await session.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw APIError.invalidResponse(status: -1, message: "No response")
-        }
-        guard (200...299).contains(httpResponse.statusCode) else {
-            let message = String(data: data, encoding: .utf8) ?? "Unknown error"
-            throw APIError.invalidResponse(status: httpResponse.statusCode, message: message)
-        }
-        guard let decoded = try? JSONDecoder().decode(Response.self, from: data) else {
-            throw APIError.decodingFailure
-        }
-        return decoded
     }
 }
 

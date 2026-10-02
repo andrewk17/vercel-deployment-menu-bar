@@ -1,12 +1,13 @@
 # Vercel Deployment Menu Bar for macOS (Open Source)
 
-A lightweight **macOS menu bar app** to **monitor Vercel deployments** in real time — see build/ready/error status at a glance and jump to details with one click.
+A lightweight **macOS menu bar app** to **monitor Vercel deployments and Cloudflare Workers Builds** in real time — see build/ready/error status at a glance and jump to details with one click.
 
 ![Vercel deployment status in macOS menu bar showing build/ready/error states](./vercel-menu-bar-deployment-status-macos.png)
 
 **Features**
 - Real-time deployment status (build, ready, error)
 - Personal or Team tokens
+- Optional Cloudflare Workers Builds, merged into the same list
 - Team, project, branch, and state filters
 - Notarized, code-signed app (no Gatekeeper warnings)
 - Native Swift app — lightweight and fast
@@ -93,31 +94,44 @@ If notarization credentials aren't configured, the script will still sign the ap
 6. Click "Create Token"
 7. **Important**: Copy the token immediately - you won't be able to see it again!
 
-### Step 2: Configure the App
+### Step 2 (Optional): Generate a Cloudflare API Token
+
+To also show Cloudflare Workers Builds (Workers connected to a git repository in the Cloudflare dashboard):
+
+1. Go to [Cloudflare → My Profile → API Tokens](https://dash.cloudflare.com/profile/api-tokens) and click "Create Token"
+2. Choose "Create Custom Token" and add these **Account** permissions:
+   - **Workers Builds Configuration: Read**
+   - **Workers Scripts: Read**
+3. Under Account Resources, include the account(s) you want to monitor
+4. Create the token and copy it
+
+It must be a **user** API token (created from your profile). Account-owned tokens can't read Workers Builds.
+
+Workers deployed directly with `wrangler deploy` (from your machine or another CI) don't create builds, so they won't appear.
+
+### Step 3: Configure the App
 
 1. Launch "Vercel Deployment Menu Bar" from your Applications folder
 2. Click the menu bar icon and select "Preferences…"
-3. Paste your API token. Changes save automatically.
+3. Paste your Vercel and/or Cloudflare token. Changes save automatically.
 4. Optionally narrow what's shown:
-   - **Team Scopes**: all scopes the token can access, or specific ones (your personal account and/or teams)
-   - **Projects**: all projects in those scopes, or specific ones
+   - **Team Scopes** and **Projects** (Vercel): all, or specific ones
+   - **Accounts** and **Workers** (Cloudflare): all, or specific ones
    - **Filters**: git branches, production/preview, and deployment states
    - **Limits**: a maximum number of deployments, or only the last N hours
 
-The menu bar shows the latest deployment's status and build time, and the menu lists recent deployments. Click one to open it in Vercel.
+The menu bar shows an in-progress build if there is one, otherwise the latest deployment, with its build time. The menu lists recent deployments from both providers, newest first. Click one to open it in Vercel or the Cloudflare dashboard.
 
 ## How It Works
 
-The app uses the Vercel API to:
-1. Fetch your deployment list periodically
-2. Check the status of each deployment
-3. Update the menu bar icon based on deployment states
-4. Display deployment details in a convenient menu
+The app polls the Vercel deployments API and the Cloudflare Workers Builds API, merges the results, and updates the menu bar icon based on deployment states. It polls faster while a build is running.
+
+Cloudflare polling is kept cheap: each refresh asks for the latest build of up to 20 Workers per request, and a Worker's build history is only re-downloaded when its latest build changes.
 
 ## Requirements
 
 - macOS 13.0+
-- Vercel API token
+- A Vercel API token and/or a Cloudflare user API token
 
 ## License
 

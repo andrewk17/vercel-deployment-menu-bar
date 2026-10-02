@@ -12,6 +12,8 @@ struct SelectionOption: Identifiable, Hashable {
     let id: String
     let title: String
     var subtitle: String?
+    /// A saved selection the latest lookup didn't return.
+    var isMissing = false
 }
 
 @MainActor
@@ -30,6 +32,12 @@ final class PreferencesViewModel: ObservableObject {
     @Published var refreshIntervalIdle = ""
     @Published var refreshIntervalBuilding = ""
 
+    @Published var cloudflareToken = ""
+    @Published var cloudflareAccountMode = SelectionMode.all
+    @Published var selectedCloudflareAccountIDs: Set<String> = []
+    @Published var cloudflareWorkerMode = SelectionMode.all
+    @Published var selectedCloudflareWorkers: Set<String> = []
+
     @Published var teamSelectionMode = SelectionMode.all
     @Published var selectedTeamScopeIDs: Set<String> = []
     @Published var projectSelectionMode = SelectionMode.all
@@ -39,7 +47,12 @@ final class PreferencesViewModel: ObservableObject {
     @Published private(set) var availableProjects: [SelectionOption] = []
     @Published private(set) var teamsLoading = false
     @Published private(set) var projectsLoading = false
-    @Published private(set) var optionsErrorMessage: String?
+    @Published private(set) var vercelOptionsErrorMessage: String?
+
+    @Published private(set) var availableCloudflareAccounts: [SelectionOption] = []
+    @Published private(set) var availableCloudflareWorkers: [SelectionOption] = []
+    @Published private(set) var cloudflareLoading = false
+    @Published private(set) var cloudflareOptionsErrorMessage: String?
 
     private static let personalScope = SelectionOption(
         id: Preferences.personalScopeIdentifier,
@@ -48,50 +61,63 @@ final class PreferencesViewModel: ObservableObject {
     )
 
     private let store: PreferencesStore
-    private let client: VercelClient
+    private let vercelClient: VercelClient
+    private let cloudflareClient: CloudflareClient
 
     private var cancellables: Set<AnyCancellable> = []
-    private var lookupTask: Task<Void, Never>?
+    private var vercelLookupTask: Task<Void, Never>?
+    private var cloudflareLookupTask: Task<Void, Never>?
     private var isHydrating = false
 
-    init(store: PreferencesStore, client: VercelClient = VercelClient()) {
+    init(
+        store: PreferencesStore,
+        vercelClient: VercelClient = VercelClient(),
+        cloudflareClient: CloudflareClient = CloudflareClient()
+    ) {
         self.store = store
-        self.client = client
+        self.vercelClient = vercelClient
+        self.cloudflareClient = cloudflareClient
         hydrate(from: store.current)
         setupObservers()
-        refreshRemoteOptions(reloadTeams: true)
+        refreshVercelOptions(reloadTeams: true)
+        refreshCloudflareOptions()
     }
 
-    var hasToken: Bool {
+    var hasVercelToken: Bool {
         !vercelToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var hasCloudflareToken: Bool {
+        !cloudflareToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     /// Discards unsaved edits and reloads from the store.
     func reset() {
         hydrate(from: store.current)
-        refreshRemoteOptions(reloadTeams: true)
+        refreshVercelOptions(reloadTeams: true)
+        refreshCloudflareOptions()
     }
 
     func save() {
         persistPreferences()
     }
 
-    func refreshRemoteOptions(reloadTeams: Bool) {
+    func refreshVercelOptions(reloadTeams: Bool) {
         guard !isHydrating else { return }
 
-        lookupTask?.cancel()
+        vercelLookupTask?.cancel()
         let token = vercelToken.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !token.isEmpty else {
             availableTeamScopes = [Self.personalScope]
             availableProjects = []
             teamsLoading = false
             projectsLoading = false
-            optionsErrorMessage = nil
+            vercelOptionsErrorMessage = nil
             return
         }
 
-        lookupTask = Task { [weak self] in
-            await self?.loadRemoteOptions(token: token, reloadTeams: reloadTeams)
+        vercelLookupTask = Task { [weak self] in
+            await self?.loadVercelOptions(token: token, reloadTeams: reloadTeams)
         }
     }
 
@@ -120,6 +146,14 @@ final class PreferencesViewModel: ObservableObject {
         let projectNames = current.projectNameList
         projectSelectionMode = projectNames.isEmpty ? .all : .selected
         selectedProjectNames = Set(projectNames)
+
+        cloudflareToken = current.cloudflareToken
+        let accountIds = current.cloudflareAccountIdList
+        cloudflareAccountMode = accountIds.isEmpty ? .all : .selected
+        selectedCloudflareAccountIDs = Set(accountIds)
+        let workers = current.cloudflareWorkerList
+        cloudflareWorkerMode = workers.isEmpty ? .all : .selected
+        selectedCloudflareWorkers = Set(workers)
     }
 
     private func setupObservers() {
@@ -134,15 +168,30 @@ final class PreferencesViewModel: ObservableObject {
             .dropFirst()
             .removeDuplicates()
             .debounce(for: .milliseconds(500), scheduler: RunLoop.main)
-            .sink { [weak self] _ in self?.refreshRemoteOptions(reloadTeams: true) }
+            .sink { [weak self] _ in self?.refreshVercelOptions(reloadTeams: true) }
             .store(in: &cancellables)
 
         Publishers.Merge(
-            $teamSelectionMode.dropFirst().map { _ in () },
-            $selectedTeamScopeIDs.dropFirst().map { _ in () }
+            $teamSelectionMode.removeDuplicates().dropFirst().map { _ in () },
+            $selectedTeamScopeIDs.removeDuplicates().dropFirst().map { _ in () }
         )
         .receive(on: RunLoop.main)
-        .sink { [weak self] in self?.refreshRemoteOptions(reloadTeams: false) }
+        .sink { [weak self] in self?.refreshVercelOptions(reloadTeams: false) }
+        .store(in: &cancellables)
+
+        $cloudflareToken
+            .dropFirst()
+            .removeDuplicates()
+            .debounce(for: .milliseconds(500), scheduler: RunLoop.main)
+            .sink { [weak self] _ in self?.refreshCloudflareOptions() }
+            .store(in: &cancellables)
+
+        Publishers.Merge(
+            $cloudflareAccountMode.removeDuplicates().dropFirst().map { _ in () },
+            $selectedCloudflareAccountIDs.removeDuplicates().dropFirst().map { _ in () }
+        )
+        .receive(on: RunLoop.main)
+        .sink { [weak self] in self?.refreshCloudflareOptions() }
         .store(in: &cancellables)
     }
 
@@ -153,6 +202,9 @@ final class PreferencesViewModel: ObservableObject {
             preferences.vercelToken = vercelToken.trimmingCharacters(in: .whitespacesAndNewlines)
             preferences.teamId = Self.serialize(selectedTeamScopeIDs, mode: teamSelectionMode)
             preferences.projectName = Self.serialize(selectedProjectNames, mode: projectSelectionMode)
+            preferences.cloudflareToken = cloudflareToken.trimmingCharacters(in: .whitespacesAndNewlines)
+            preferences.cloudflareAccountIds = Self.serialize(selectedCloudflareAccountIDs, mode: cloudflareAccountMode)
+            preferences.cloudflareWorkers = Self.serialize(selectedCloudflareWorkers, mode: cloudflareWorkerMode)
             preferences.gitBranches = gitBranches
             preferences.showProduction = showProduction
             preferences.showPreview = showPreview
@@ -174,21 +226,19 @@ final class PreferencesViewModel: ObservableObject {
         return selection.sorted().joined(separator: ",")
     }
 
-    private func loadRemoteOptions(token: String, reloadTeams: Bool) async {
-        optionsErrorMessage = nil
+    private func loadVercelOptions(token: String, reloadTeams: Bool) async {
+        vercelOptionsErrorMessage = nil
 
         if reloadTeams {
             teamsLoading = true
             do {
-                let teams = try await client.teams(token: token)
+                let teams = try await vercelClient.teams(token: token)
                     .map { SelectionOption(id: $0.slug, title: $0.name, subtitle: $0.slug) }
                     .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
-                let options = [Self.personalScope] + teams
-                availableTeamScopes = options
-                selectedTeamScopeIDs.formIntersection(options.map(\.id))
+                availableTeamScopes = Self.options([Self.personalScope] + teams, keeping: selectedTeamScopeIDs)
             } catch where !Self.isCancellation(error) {
-                availableTeamScopes = [Self.personalScope]
-                optionsErrorMessage = error.localizedDescription
+                availableTeamScopes = Self.options([Self.personalScope], keeping: selectedTeamScopeIDs)
+                vercelOptionsErrorMessage = error.localizedDescription
             } catch {}
             teamsLoading = false
         }
@@ -196,22 +246,27 @@ final class PreferencesViewModel: ObservableObject {
         projectsLoading = true
         do {
             let names = try await fetchProjectNamesForCurrentScope(token: token)
-            availableProjects = names.map { SelectionOption(id: $0, title: $0) }
-            selectedProjectNames.formIntersection(names)
+            availableProjects = Self.options(names.map { SelectionOption(id: $0, title: $0) }, keeping: selectedProjectNames)
         } catch where !Self.isCancellation(error) {
-            availableProjects = []
-            optionsErrorMessage = error.localizedDescription
+            availableProjects = Self.options([], keeping: selectedProjectNames)
+            vercelOptionsErrorMessage = error.localizedDescription
         } catch {}
         projectsLoading = false
     }
 
+    /// Uses the same scopes `VercelDeploymentProvider` fetches from, so every project it can
+    /// show is selectable.
     private func fetchProjectNamesForCurrentScope(token: String) async throws -> [String] {
-        let scopes: [String?] = teamSelectionMode == .all
+        let scopeIDs = teamSelectionMode == .all
+            ? availableTeamScopes.filter { !$0.isMissing }.map(\.id)
+            : Array(selectedTeamScopeIDs)
+        // No scopes yet (or none chosen) means the token's default scope, as when fetching.
+        let scopes: [String?] = scopeIDs.isEmpty
             ? [nil]
-            : selectedTeamScopeIDs.map { $0 == Preferences.personalScopeIdentifier ? nil : $0 }
+            : scopeIDs.map { $0 == Preferences.personalScopeIdentifier ? nil : $0 }
 
         let projects = try await gatherConcurrently(scopes) { teamId in
-            try await self.client.projects(token: token, teamId: teamId)
+            try await self.vercelClient.projects(token: token, teamId: teamId)
         }
 
         var seen: Set<String> = []
@@ -219,6 +274,56 @@ final class PreferencesViewModel: ObservableObject {
             .map(\.name)
             .filter { seen.insert($0.lowercased()).inserted }
             .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    func refreshCloudflareOptions() {
+        guard !isHydrating else { return }
+
+        cloudflareLookupTask?.cancel()
+        let token = cloudflareToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !token.isEmpty else {
+            availableCloudflareAccounts = []
+            availableCloudflareWorkers = []
+            cloudflareLoading = false
+            cloudflareOptionsErrorMessage = nil
+            return
+        }
+
+        cloudflareLookupTask = Task { [weak self] in
+            await self?.loadCloudflareOptions(token: token)
+        }
+    }
+
+    private func loadCloudflareOptions(token: String) async {
+        cloudflareLoading = true
+        cloudflareOptionsErrorMessage = nil
+        defer { cloudflareLoading = false }
+
+        do {
+            let accounts = try await cloudflareClient.accounts(token: token)
+                .map { SelectionOption(id: $0.id, title: $0.name, subtitle: $0.id) }
+                .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+            availableCloudflareAccounts = Self.options(accounts, keeping: selectedCloudflareAccountIDs)
+
+            let accountIds = cloudflareAccountMode == .all ? accounts.map(\.id) : Array(selectedCloudflareAccountIDs)
+            let workers = try await gatherConcurrently(accountIds) { accountId in
+                try await self.cloudflareClient.workers(token: token, accountId: accountId)
+            }
+            let names = Set(workers.map(\.id)).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+            availableCloudflareWorkers = Self.options(names.map { SelectionOption(id: $0, title: $0) }, keeping: selectedCloudflareWorkers)
+        } catch where !Self.isCancellation(error) {
+            cloudflareOptionsErrorMessage = error.localizedDescription
+        } catch {}
+    }
+
+    /// Appends saved selections a lookup didn't return. A failed request or a change in access
+    /// shouldn't silently discard, and then auto-save over, what the user chose.
+    private static func options(_ options: [SelectionOption], keeping selection: Set<String>) -> [SelectionOption] {
+        let known = Set(options.map(\.id))
+        let missing = selection.subtracting(known).sorted().map {
+            SelectionOption(id: $0, title: $0, subtitle: "Not found", isMissing: true)
+        }
+        return options + missing
     }
 
     private static func isCancellation(_ error: Error) -> Bool {
