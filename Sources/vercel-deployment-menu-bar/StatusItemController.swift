@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 
+@MainActor
 final class StatusItemController {
     private let statusItem: NSStatusItem
     private let menu = NSMenu()
@@ -8,10 +9,11 @@ final class StatusItemController {
 
     private var refreshTimer: Timer?
     private var tickTimer: Timer?
-    private var latestDeployments: [Deployment] = []
+    private var refreshTask: Task<Void, Never>?
+    private var latestDeployments: [VercelDeployment] = []
     private var lastError: Error?
     private var lastFetchDate: Date?
-    private var missingToken: Bool = false
+    private var missingToken = false
 
     private var preferencesObserver: NSObjectProtocol?
 
@@ -29,7 +31,9 @@ final class StatusItemController {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.refreshDeployments(userInitiated: true)
+            MainActor.assumeIsolated {
+                self?.refreshDeployments(restartInFlight: true)
+            }
         }
 
         buildMenu()
@@ -40,24 +44,21 @@ final class StatusItemController {
     func stop() {
         preferencesObserver.flatMap(NotificationCenter.default.removeObserver)
         preferencesObserver = nil
+        refreshTask?.cancel()
         refreshTimer?.invalidate()
-        refreshTimer = nil
         tickTimer?.invalidate()
-        tickTimer = nil
     }
 
+    // MARK: - Actions
+
     @objc private func refreshFromMenu(_ sender: Any?) {
-        refreshDeployments(userInitiated: true)
+        refreshDeployments(restartInFlight: true)
     }
 
     @objc private func openDashboard(_ sender: Any?) {
-        let preferences = PreferencesStore.shared.current
+        let teamIds = PreferencesStore.shared.current.teamIdList
         var urlString = "https://vercel.com/deployments"
-        let teamIds = preferences.teamIdList
-        if
-            teamIds.count == 1,
-            teamIds[0] != Preferences.personalScopeIdentifier
-        {
+        if teamIds.count == 1, teamIds[0] != Preferences.personalScopeIdentifier {
             urlString = "https://vercel.com/\(teamIds[0])/deployments"
         }
         if let url = URL(string: urlString) {
@@ -78,133 +79,90 @@ final class StatusItemController {
         NSApp.terminate(nil)
     }
 
+    // MARK: - Refreshing
+
     private func startTickTimer() {
-        tickTimer?.invalidate()
-        tickTimer = Timer.scheduledTimer(
-            timeInterval: 1.0,
-            target: self,
-            selector: #selector(tick),
-            userInfo: nil,
-            repeats: true
-        )
-        RunLoop.main.add(tickTimer!, forMode: .common)
+        let timer = Timer(timeInterval: 1.0, target: self, selector: #selector(tick), userInfo: nil, repeats: true)
+        RunLoop.main.add(timer, forMode: .common)
+        tickTimer = timer
     }
 
     @objc private func tick() {
         updateStatusButton()
     }
 
-    private func scheduleRefreshTimer(hasBuilding: Bool) {
+    private func scheduleNextRefresh() {
         refreshTimer?.invalidate()
         let preferences = PreferencesStore.shared.current
-        let idleInterval = TimeInterval(preferences.refreshIntervalIdle ?? 15)
-        let buildingInterval = TimeInterval(preferences.refreshIntervalBuilding ?? 2)
-        let interval: TimeInterval = hasBuilding ? buildingInterval : idleInterval
-        refreshTimer = Timer.scheduledTimer(
-            timeInterval: interval,
+        let hasActiveBuild = latestDeployments.contains { $0.state == .building || $0.state == .queued }
+        let seconds = hasActiveBuild
+            ? preferences.refreshIntervalBuilding ?? 2
+            : preferences.refreshIntervalIdle ?? 15
+        let timer = Timer(
+            timeInterval: TimeInterval(max(seconds, 1)),
             target: self,
-            selector: #selector(triggerRefreshTimer),
+            selector: #selector(refreshTimerFired),
             userInfo: nil,
-            repeats: true
+            repeats: false
         )
-        RunLoop.main.add(refreshTimer!, forMode: .common)
+        RunLoop.main.add(timer, forMode: .common)
+        refreshTimer = timer
     }
 
-    @objc private func triggerRefreshTimer() {
+    @objc private func refreshTimerFired() {
         refreshDeployments()
     }
 
-    private func refreshDeployments(userInitiated: Bool = false) {
-        Task {
+    /// Starts a refresh unless one is already running. Pass `restartInFlight` when the
+    /// in-flight request may be stale, such as after a preferences change.
+    private func refreshDeployments(restartInFlight: Bool = false) {
+        if refreshTask != nil {
+            guard restartInFlight else { return }
+            refreshTask?.cancel()
+        }
+
+        refreshTimer?.invalidate()
+        let preferences = PreferencesStore.shared.current
+
+        guard preferences.hasToken else {
+            refreshTask = nil
+            latestDeployments = []
+            lastError = nil
+            missingToken = true
+            render()
+            return
+        }
+
+        refreshTask = Task {
+            let result: Result<[VercelDeployment], Error>
             do {
-                let preferences = PreferencesStore.shared.current
-                guard preferences.hasToken else {
-                    await MainActor.run {
-                        self.latestDeployments = []
-                        self.lastError = nil
-                        self.missingToken = true
-                        self.buildMenu()
-                        self.updateStatusButton()
-                    }
-                    return
-                }
-
-                let deployments = try await deploymentService.fetchAllDeployments(preferences: preferences)
-                let filtered = filterDeployments(deployments, with: preferences)
-
-                await MainActor.run {
-                    self.latestDeployments = filtered
-                    self.lastError = nil
-                    self.missingToken = false
-                    self.lastFetchDate = Date()
-                    let hasBuilding = filtered.contains { $0.state == .building || $0.state == .queued }
-                    self.scheduleRefreshTimer(hasBuilding: hasBuilding)
-                    self.buildMenu()
-                    self.updateStatusButton()
-                }
+                result = .success(try await deploymentService.fetchAllDeployments(preferences: preferences))
             } catch {
-                await MainActor.run {
-                    self.latestDeployments = []
-                    self.lastError = error
-                    self.missingToken = false
-                    self.buildMenu()
-                    self.updateStatusButton()
-                }
+                result = .failure(error)
             }
+            guard !Task.isCancelled else { return }
+
+            switch result {
+            case let .success(deployments):
+                latestDeployments = DeploymentFilter(preferences: preferences).apply(to: deployments)
+                lastError = nil
+                lastFetchDate = Date()
+            case let .failure(error):
+                latestDeployments = []
+                lastError = error
+            }
+            missingToken = false
+            refreshTask = nil
+            render()
+            scheduleNextRefresh()
         }
     }
 
-    private func filterDeployments(_ deployments: [Deployment], with preferences: Preferences) -> [Deployment] {
-        let normalizedProjectNames = preferences.normalizedProjectNameSet
+    // MARK: - Rendering
 
-        var filtered = deployments.filter { deployment in
-            if !normalizedProjectNames.isEmpty {
-                let normalizedDeploymentName = deployment.name.lowercased()
-                guard normalizedProjectNames.contains(normalizedDeploymentName) else { return false }
-            }
-
-            switch deployment.state {
-            case .ready:
-                guard preferences.showReady else { return false }
-            case .building:
-                guard preferences.showBuilding else { return false }
-            case .error:
-                guard preferences.showError else { return false }
-            case .queued:
-                guard preferences.showQueued else { return false }
-            case .canceled:
-                guard preferences.showCanceled else { return false }
-            case .unknown:
-                break
-            }
-
-            if let target = deployment.target?.lowercased() {
-                if target == "production", !preferences.showProduction {
-                    return false
-                }
-                if target == "preview", !preferences.showPreview {
-                    return false
-                }
-            }
-
-            if !preferences.branchList.isEmpty {
-                let branch = (deployment.gitSource?.ref ?? deployment.meta?.githubCommitRef ?? "").lowercased()
-                if branch.isEmpty || !preferences.branchList.contains(branch) {
-                    return false
-                }
-            }
-
-            return true
-        }
-
-        if let limit = preferences.limitByCount, limit > 0 {
-            filtered = Array(filtered.prefix(limit))
-        } else if let hours = preferences.limitByHours, hours > 0 {
-            let cutoff = Date().addingTimeInterval(TimeInterval(-hours * 3600))
-            filtered = filtered.filter { $0.createdDate >= cutoff }
-        }
-
-        return filtered.sorted { $0.created > $1.created }
+    private func render() {
+        buildMenu()
+        updateStatusButton()
     }
 
     private func updateStatusButton() {
@@ -213,253 +171,113 @@ final class StatusItemController {
         if missingToken {
             button.title = "No Token"
             button.image = NSImage(systemSymbolName: "key.slash", accessibilityDescription: nil)
-            return
-        }
-
-        guard lastError == nil else {
+        } else if lastError != nil {
             button.title = "Error"
             button.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: nil)
-            return
-        }
-
-        guard let latest = latestDeployments.first else {
+        } else if let latest = latestDeployments.first {
+            button.image = StatusIcon.image(for: latest.state)
+            button.title = statusTitle(for: latest)
+        } else {
             button.title = "VRC"
             button.image = NSImage(systemSymbolName: "circle", accessibilityDescription: nil)
-            return
         }
-
-        button.image = icon(for: latest.state)
-        button.title = formattedStatusTitle(for: latest)
     }
 
-    private func formattedStatusTitle(for deployment: Deployment) -> String {
+    private func statusTitle(for deployment: VercelDeployment) -> String {
         let label = String(deployment.name.prefix(3)).uppercased()
+        guard let duration = elapsedDuration(for: deployment) else { return label }
+        return "\(label) \(Formatting.duration(duration))"
+    }
+
+    /// Time spent building so far, or the final build time once finished.
+    private func elapsedDuration(for deployment: VercelDeployment) -> TimeInterval? {
         switch deployment.state {
         case .building:
-            let elapsed = Date().timeIntervalSince(deployment.buildingAtDate)
-            return "\(label) \(formatDuration(elapsed))"
+            return Date().timeIntervalSince(deployment.buildingAtDate)
         case .queued:
-            let elapsed = Date().timeIntervalSince(deployment.createdDate)
-            return "\(label) \(formatDuration(elapsed))"
-        case .ready:
-            if let readyDate = deployment.readyDate {
-                let elapsed = readyDate.timeIntervalSince(deployment.buildingAtDate)
-                return "\(label) \(formatDuration(max(elapsed, 0)))"
-            }
-            return label
-        case .error:
-            if let readyDate = deployment.readyDate {
-                let elapsed = readyDate.timeIntervalSince(deployment.buildingAtDate)
-                let formatted = formatDuration(max(elapsed, 0))
-                return "\(label) \(formatted)"
-            }
-            return label
+            return Date().timeIntervalSince(deployment.createdDate)
+        case .ready, .error:
+            return deployment.readyDate.map { max($0.timeIntervalSince(deployment.buildingAtDate), 0) }
         case .canceled, .unknown:
-            return label
-        }
-    }
-
-    private func formatDuration(_ seconds: TimeInterval) -> String {
-        let sec = Int(seconds)
-        let hours = sec / 3600
-        let minutes = (sec % 3600) / 60
-        let remaining = sec % 60
-
-        if hours > 0 {
-            return "\(hours)h \(minutes)m \(remaining)s"
-        } else if minutes > 0 {
-            return "\(minutes)m \(remaining)s"
-        } else {
-            return "\(remaining)s"
-        }
-    }
-
-    private func formatTime(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.timeStyle = .short
-        formatter.dateStyle = .none
-        return formatter.string(from: date)
-    }
-
-    private func icon(for state: Deployment.State) -> NSImage? {
-        let symbolName: String
-        let color: NSColor
-
-        switch state {
-        case .ready:
-            symbolName = "checkmark.circle.fill"
-            color = .systemGreen
-        case .error:
-            symbolName = "xmark.circle.fill"
-            color = .systemRed
-        case .building:
-            symbolName = "hourglass"
-            color = .systemYellow
-        case .queued:
-            symbolName = "clock.fill"
-            color = .systemOrange
-        case .canceled:
-            symbolName = "minus.circle.fill"
-            color = .systemGray
-        case .unknown:
-            symbolName = "questionmark.circle"
-            color = .systemGray
-        }
-
-        guard let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil) else {
             return nil
         }
-
-        // Create a colored version of the image
-        let coloredImage = NSImage(size: image.size)
-        coloredImage.lockFocus()
-        color.set()
-
-        let rect = NSRect(origin: .zero, size: image.size)
-        image.draw(in: rect, from: rect, operation: .sourceOver, fraction: 1.0)
-
-        // Apply the color using a compositing operation
-        rect.fill(using: .sourceAtop)
-
-        coloredImage.unlockFocus()
-        coloredImage.isTemplate = false
-
-        return coloredImage
     }
 
     private func buildMenu() {
         menu.removeAllItems()
 
         if missingToken {
-            menu.addItem(NSMenuItem(title: "Add your Vercel token in Preferences", action: nil, keyEquivalent: ""))
+            menu.addItem(disabledItem("Add your Vercel token in Preferences"))
             menu.addItem(.separator())
-        } else if let error = lastError {
-            let errorItem = NSMenuItem(
-                title: "Error: \(error.localizedDescription)",
-                action: nil,
-                keyEquivalent: ""
-            )
-            menu.addItem(errorItem)
+        } else if let lastError {
+            menu.addItem(disabledItem("Error: \(lastError.localizedDescription)"))
             menu.addItem(.separator())
+        } else if latestDeployments.isEmpty {
+            menu.addItem(disabledItem("No deployments found"))
         }
 
-        if latestDeployments.isEmpty && lastError == nil && !missingToken {
-            menu.addItem(NSMenuItem(title: "No deployments found", action: nil, keyEquivalent: ""))
-        } else if !missingToken {
+        if !missingToken {
             for deployment in latestDeployments {
-                let title = menuTitle(for: deployment)
-                let item = NSMenuItem(
-                    title: title,
-                    action: #selector(openDeployment(_:)),
-                    keyEquivalent: ""
-                )
+                let item = NSMenuItem(title: menuTitle(for: deployment), action: #selector(openDeployment(_:)), keyEquivalent: "")
                 item.target = self
-
-                if
-                    let inspectorUrl = deployment.inspectorUrl,
-                    !inspectorUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                    let url = URL(string: inspectorUrl)
-                {
-                    item.representedObject = url
-                } else {
-                    let deploymentUrl: String
-                    if deployment.url.hasPrefix("http://") || deployment.url.hasPrefix("https://") {
-                        deploymentUrl = deployment.url
-                    } else {
-                        deploymentUrl = "https://\(deployment.url)"
-                    }
-                    if let url = URL(string: deploymentUrl) {
-                        item.representedObject = url
-                    }
-                }
-                item.toolTip = commitToolTip(for: deployment)
-                item.image = icon(for: deployment.state)
+                item.representedObject = deployment.link
+                item.toolTip = Self.sanitizedCommitToolTip(from: deployment.commitMessage)
+                item.image = StatusIcon.image(for: deployment.state)
                 menu.addItem(item)
             }
         }
 
         if let lastFetchDate {
             menu.addItem(.separator())
-            let formatter = DateFormatter()
-            formatter.dateStyle = .none
-            formatter.timeStyle = .short
-            let updatedTitle = "Last updated: \(formatter.string(from: lastFetchDate))"
-            let updatedItem = NSMenuItem(title: updatedTitle, action: nil, keyEquivalent: "")
-            updatedItem.isEnabled = false
-            menu.addItem(updatedItem)
+            menu.addItem(disabledItem("Last updated: \(Formatting.time(lastFetchDate))"))
         }
 
         menu.addItem(.separator())
-
-        let refreshItem = NSMenuItem(title: "Refresh Now", action: #selector(refreshFromMenu(_:)), keyEquivalent: "r")
-        refreshItem.target = self
-        menu.addItem(refreshItem)
-
-        let dashboardItem = NSMenuItem(title: "Open Vercel Dashboard", action: #selector(openDashboard(_:)), keyEquivalent: "")
-        dashboardItem.target = self
-        menu.addItem(dashboardItem)
-
-        let preferencesItem = NSMenuItem(title: "Preferences…", action: #selector(openPreferences(_:)), keyEquivalent: ",")
-        preferencesItem.target = self
-        menu.addItem(preferencesItem)
-
+        menu.addItem(actionItem("Refresh Now", #selector(refreshFromMenu(_:)), key: "r"))
+        menu.addItem(actionItem("Open Vercel Dashboard", #selector(openDashboard(_:))))
+        menu.addItem(actionItem("Preferences…", #selector(openPreferences(_:)), key: ","))
         menu.addItem(.separator())
-
-        let quitItem = NSMenuItem(title: "Quit Vercel Deployment Menu Bar", action: #selector(quitApp(_:)), keyEquivalent: "q")
-        quitItem.target = self
-        menu.addItem(quitItem)
+        menu.addItem(actionItem("Quit Vercel Deployment Menu Bar", #selector(quitApp(_:)), key: "q"))
     }
 
-    private func menuTitle(for deployment: Deployment) -> String {
-        var components: [String] = []
+    private func disabledItem(_ title: String) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.isEnabled = false
+        return item
+    }
 
-        let gitBranch = deployment.gitSource?.ref ?? deployment.meta?.githubCommitRef ?? ""
-        if gitBranch.isEmpty {
-            components.append(deployment.name)
-        } else {
-            components.append("\(deployment.name) (\(gitBranch))")
-        }
+    private func actionItem(_ title: String, _ action: Selector, key: String = "") -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+        item.target = self
+        return item
+    }
+
+    private func menuTitle(for deployment: VercelDeployment) -> String {
+        let name = deployment.branch.map { "\(deployment.name) (\($0))" } ?? deployment.name
 
         var statusParts: [String] = []
         if let target = deployment.target {
             statusParts.append(target.capitalized)
         }
+        statusParts.append(statusDescription(for: deployment))
+        statusParts.append(Formatting.time(deployment.buildingAtDate))
 
+        return "\(name) — \(statusParts.joined(separator: " • "))"
+    }
+
+    private func statusDescription(for deployment: VercelDeployment) -> String {
+        let duration = elapsedDuration(for: deployment).map { " \(Formatting.duration($0))" } ?? ""
         switch deployment.state {
-        case .building:
-            statusParts.append("Building \(formatDuration(Date().timeIntervalSince(deployment.buildingAtDate)))")
-        case .queued:
-            statusParts.append("Queued \(formatDuration(Date().timeIntervalSince(deployment.createdDate)))")
-        case .ready:
-            if let readyDate = deployment.readyDate {
-                let duration = readyDate.timeIntervalSince(deployment.buildingAtDate)
-                statusParts.append("Ready \(formatDuration(max(duration, 0)))")
-            } else {
-                statusParts.append("Ready")
-            }
-        case .error:
-            statusParts.append("Error")
-        case .canceled:
-            statusParts.append("Canceled")
-        case .unknown:
-            statusParts.append("Unknown")
+        case .building: return "Building\(duration)"
+        case .queued: return "Queued\(duration)"
+        case .ready: return "Ready\(duration)"
+        case .error: return "Error"
+        case .canceled: return "Canceled"
+        case .unknown: return "Unknown"
         }
-
-        let timeString = formatTime(deployment.buildingAtDate)
-        statusParts.append(timeString)
-
-        if !statusParts.isEmpty {
-            components.append(statusParts.joined(separator: " • "))
-        }
-
-        return components.joined(separator: " — ")
     }
 
-    private func commitToolTip(for deployment: Deployment) -> String? {
-        Self.sanitizedCommitToolTip(from: deployment.meta?.githubCommitMessage)
-    }
-
-    static func sanitizedCommitToolTip(from rawMessage: String?) -> String? {
+    nonisolated static func sanitizedCommitToolTip(from rawMessage: String?) -> String? {
         guard let rawMessage else {
             return nil
         }
@@ -468,9 +286,6 @@ final class StatusItemController {
             .split(whereSeparator: \.isNewline)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .first(where: { !$0.isEmpty }) ?? ""
-        guard !firstLine.isEmpty else {
-            return nil
-        }
 
         let collapsed = firstLine
             .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
@@ -483,7 +298,59 @@ final class StatusItemController {
         guard collapsed.count > maxLength else {
             return collapsed
         }
-        let cutoff = collapsed.index(collapsed.startIndex, offsetBy: maxLength - 1)
-        return String(collapsed[..<cutoff]) + "…"
+        return String(collapsed.prefix(maxLength - 1)) + "…"
+    }
+}
+
+private enum Formatting {
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .none
+        formatter.timeStyle = .short
+        return formatter
+    }()
+
+    static func time(_ date: Date) -> String {
+        timeFormatter.string(from: date)
+    }
+
+    static func duration(_ seconds: TimeInterval) -> String {
+        let total = Int(seconds)
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        let remaining = total % 60
+
+        if hours > 0 {
+            return "\(hours)h \(minutes)m \(remaining)s"
+        } else if minutes > 0 {
+            return "\(minutes)m \(remaining)s"
+        } else {
+            return "\(remaining)s"
+        }
+    }
+}
+
+@MainActor
+private enum StatusIcon {
+    private static var cache: [VercelDeployment.State: NSImage] = [:]
+
+    static func image(for state: VercelDeployment.State) -> NSImage? {
+        if let cached = cache[state] {
+            return cached
+        }
+
+        let (symbolName, color): (String, NSColor) = switch state {
+        case .ready: ("checkmark.circle.fill", .systemGreen)
+        case .error: ("xmark.circle.fill", .systemRed)
+        case .building: ("hourglass", .systemYellow)
+        case .queued: ("clock.fill", .systemOrange)
+        case .canceled: ("minus.circle.fill", .systemGray)
+        case .unknown: ("questionmark.circle", .systemGray)
+        }
+
+        let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [color]))
+        cache[state] = image
+        return image
     }
 }
