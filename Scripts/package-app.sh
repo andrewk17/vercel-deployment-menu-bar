@@ -5,12 +5,15 @@ PRODUCT_NAME="Vercel Deployment Menu Bar"
 BUILD_DIR="$ROOT/.build/release"
 EXECUTABLE="$BUILD_DIR/vercel-deployment-menu-bar"
 APP_DIR="$ROOT/build/${PRODUCT_NAME}.app"
+# Defaults to the latest release tag; override with VERSION=x.y.z.
+VERSION="${VERSION:-$(git -C "$ROOT" describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')}"
+VERSION="${VERSION:-0.0.0}"
 
 rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS"
 mkdir -p "$APP_DIR/Contents/Resources"
 
-cat > "$APP_DIR/Contents/Info.plist" <<'INFO'
+cat > "$APP_DIR/Contents/Info.plist" <<INFO
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -28,9 +31,9 @@ cat > "$APP_DIR/Contents/Info.plist" <<'INFO'
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
+    <string>${VERSION}</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>${VERSION}</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
     <key>LSUIElement</key>
@@ -50,7 +53,7 @@ if [ -f "$ROOT/Resources/AppIcon.icns" ]; then
 fi
 
 # Sign the app with Developer ID certificate
-SIGNING_IDENTITY="Developer ID Application: Andrew Kim (P44RGE92LU)"
+SIGNING_IDENTITY="${SIGNING_IDENTITY:-Developer ID Application: Andrew Kim (P44RGE92LU)}"
 ENTITLEMENTS="$ROOT/Resources/entitlements.plist"
 
 echo "Signing app with identity: $SIGNING_IDENTITY"

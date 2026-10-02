@@ -7,7 +7,7 @@ A lightweight **macOS menu bar app** to **monitor Vercel deployments** in real t
 **Features**
 - Real-time deployment status (build, ready, error)
 - Personal or Team tokens
-- Comma-separated team and project filters
+- Team, project, branch, and state filters
 - Notarized, code-signed app (no Gatekeeper warnings)
 - Native Swift app — lightweight and fast
 - Quick access to deployment details from the menu bar
@@ -96,36 +96,15 @@ If notarization credentials aren't configured, the script will still sign the ap
 ### Step 2: Configure the App
 
 1. Launch "Vercel Deployment Menu Bar" from your Applications folder
-2. Click the menu bar icon (upside-down triangle)
-3. Select "Preferences"
-4. Enter your API token in the "Token" field
+2. Click the menu bar icon and select "Preferences…"
+3. Paste your API token. Changes save automatically.
+4. Optionally narrow what's shown:
+   - **Team Scopes**: all scopes the token can access, or specific ones (your personal account and/or teams)
+   - **Projects**: all projects in those scopes, or specific ones
+   - **Filters**: git branches, production/preview, and deployment states
+   - **Limits**: a maximum number of deployments, or only the last N hours
 
-### Step 3: Configure Team ID(s) (Only if you scoped the token to a team)
-
-If you created a token scoped to a specific team, you **must** also enter your Team ID:
-
-1. In the Preferences window, locate the "Team ID(s)" field
-2. To find your Team ID:
-   - Go to your [Vercel Dashboard](https://vercel.com/)
-   - Select your team from the dropdown
-   - Look at the URL - it will be: `https://vercel.com/[TEAM_ID]/~`
-   - The `[TEAM_ID]` is what you need (e.g., if the URL is `https://vercel.com/acme-corp/~`, your Team ID is `acme-corp`)
-   - Alternatively, go to Team Settings → General and find your Team Slug
-3. Enter one Team ID, or multiple Team IDs as comma-separated values (e.g., `acme-corp, studio-team`)
-4. Click save
-
-**Note**: If you used a personal account token, you can leave the Team ID(s) field empty.
-
-### Step 4: Optional Project Name Filter
-
-To only show specific projects, set "Project Name(s)" in Preferences:
-
-1. Enter one project name, or multiple as comma-separated values (e.g., `web-app, api`)
-2. Only deployments from those projects will be shown
-
-### Step 5: Start Monitoring
-
-Once configured, the app will automatically start monitoring your deployments. The menu bar icon will update based on your latest deployment status.
+The menu bar shows the latest deployment's status and build time, and the menu lists recent deployments. Click one to open it in Vercel.
 
 ## How It Works
 
@@ -150,23 +129,15 @@ MIT License - see [LICENSE](LICENSE) file for details
 
 Install the Vercel Deployment Menu Bar app, configure it with your Vercel API token, and it will automatically display real-time deployment status in your macOS menu bar. The app polls the Vercel API and updates the status icon based on your latest deployments.
 
-### Where do I find my Vercel Team ID?
+### Do I need my Vercel Team ID?
 
-If you're using a team-scoped Vercel API token, you need to provide your Team ID:
-
-1. Go to your [Vercel Dashboard](https://vercel.com/)
-2. Select your team from the dropdown
-3. Look at the URL: `https://vercel.com/[TEAM_ID]/~`
-4. Copy the `[TEAM_ID]` portion (e.g., if the URL shows `https://vercel.com/acme-corp/~`, your Team ID is `acme-corp`)
-5. Alternatively, go to Team Settings → General to find your Team Slug
-
-Enter this Team ID in the app's Preferences. You can also enter multiple Team IDs as comma-separated values. If you're using a personal account token, you can leave the Team ID(s) field empty.
+Usually not. Preferences lists the scopes your token can access, so you can pick teams from the list instead of typing IDs.
 
 ### How do I fix the "damaged app" error on macOS?
 
 The latest releases (v0.2.0+) are properly code-signed and notarized, so you shouldn't see this error. If you do:
 
-1. Download the latest release from the [Releases](https://github.com/andrewshawcare/vercel-deployment-menu-bar/releases) page
+1. Download the latest release from the [Releases](https://github.com/andrewk17/vercel-deployment-menu-bar/releases) page
 2. If the error persists, right-click the app and select "Open" instead of double-clicking
 3. For older versions, you may need to remove the quarantine attribute: `xattr -d com.apple.quarantine "/Applications/Vercel Deployment Menu Bar.app"`
 
