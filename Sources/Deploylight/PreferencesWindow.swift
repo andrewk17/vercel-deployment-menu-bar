@@ -8,16 +8,22 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
     private let viewModel = PreferencesViewModel(store: PreferencesStore.shared)
 
     private init() {
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 560, height: 760),
-            styleMask: [.titled, .closable, .miniaturizable],
-            backing: .buffered,
-            defer: false
-        )
-        window.center()
-        window.title = "Deploylight Preferences"
+        let tabs = NSTabViewController()
+        tabs.tabStyle = .toolbar
+        for pane in PreferencesPane.allCases {
+            let host = NSHostingController(rootView: pane.view(viewModel: viewModel))
+            host.sizingOptions = .preferredContentSize
+            host.title = pane.title
+            let item = NSTabViewItem(viewController: host)
+            item.label = pane.title
+            item.image = NSImage(systemSymbolName: pane.symbolName, accessibilityDescription: pane.title)
+            tabs.addTabViewItem(item)
+        }
+
+        let window = NSWindow(contentViewController: tabs)
+        window.styleMask = [.titled, .closable]
+        window.toolbarStyle = .preference
         super.init(window: window)
-        window.contentViewController = NSHostingController(rootView: PreferencesView(viewModel: viewModel))
         window.delegate = self
     }
 
@@ -29,7 +35,12 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
     func show() {
         guard let window else { return }
         viewModel.reset()
+        if !window.isVisible {
+            window.center()
+        }
         window.makeKeyAndOrderFront(nil)
+        // Otherwise the first token field takes focus with its contents selected.
+        window.makeFirstResponder(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -38,335 +49,512 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
     }
 }
 
-struct PreferencesView: View {
+enum PreferencesPane: CaseIterable {
+    case general
+    case menu
+    case accounts
+    case filters
+
+    var title: String {
+        switch self {
+        case .general: "General"
+        case .menu: "Menu"
+        case .accounts: "Accounts"
+        case .filters: "Filters"
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .general: "gearshape"
+        case .menu: "filemenu.and.selection"
+        case .accounts: "person.crop.circle"
+        case .filters: "line.3.horizontal.decrease.circle"
+        }
+    }
+
+    /// Accounts scrolls once providers list their teams and Workers; the others fit.
+    private var height: CGFloat {
+        switch self {
+        case .general: 350
+        case .menu: 545
+        case .accounts: 600
+        case .filters: 480
+        }
+    }
+
+    @MainActor
+    func view(viewModel: PreferencesViewModel) -> AnyView {
+        let content: AnyView = switch self {
+        case .general: AnyView(GeneralPane(viewModel: viewModel))
+        case .menu: AnyView(MenuPane(viewModel: viewModel))
+        case .accounts: AnyView(AccountsPane(viewModel: viewModel))
+        case .filters: AnyView(FiltersPane(viewModel: viewModel))
+        }
+        return AnyView(content.formStyle(.grouped).frame(width: 540, height: height))
+    }
+}
+
+// MARK: - General
+
+struct GeneralPane: View {
     @ObservedObject var viewModel: PreferencesViewModel
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                PreferencesSection("Vercel") {
-                    TokenField(
-                        label: "API Token",
-                        token: $viewModel.vercelToken,
-                        help: "Create a token at vercel.com/account/tokens. Leave blank to hide Vercel deployments."
-                    )
+        Form {
+            Section("Menu Bar") {
+                MenuBarPreview(style: viewModel.menuBarStyle, timeFormat: viewModel.timeFormat)
 
-                    HStack {
-                        Text("Scope & Project")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Button("Refresh") {
-                            viewModel.refreshVercelOptions(reloadTeams: true)
-                        }
-                        .disabled(!viewModel.hasVercelToken || viewModel.teamsLoading || viewModel.projectsLoading)
+                Picker("Show project and build time", selection: $viewModel.menuBarStyle) {
+                    Text("While Building").tag(MenuBarStyle.auto)
+                    Text("Always").tag(MenuBarStyle.detailed)
+                    Text("Never").tag(MenuBarStyle.compact)
+                }
+
+                Picker("Time format", selection: $viewModel.timeFormat) {
+                    ForEach(TimeFormat.allCases, id: \.self) { format in
+                        Text(Formatting.duration(134, format: format)).tag(format)
                     }
+                }
+            }
 
-                    SelectionList(
-                        title: "Team Scopes",
-                        allLabel: "All Accessible Scopes",
-                        selectedLabel: "Choose Specific Scopes",
-                        loadingLabel: "Loading team scopes…",
-                        emptyLabel: "No scopes available for this token.",
+            Section("Refresh") {
+                Picker("When idle, check every", selection: $viewModel.refreshIntervalIdle) {
+                    ForEach(pickerOptions([15, 30, 60, 300], including: viewModel.refreshIntervalIdle), id: \.self) { seconds in
+                        Text(Self.secondsLabel(seconds)).tag(seconds)
+                    }
+                }
+
+                Picker("While building, check every", selection: $viewModel.refreshIntervalBuilding) {
+                    ForEach(pickerOptions([2, 5, 10, 30], including: viewModel.refreshIntervalBuilding), id: \.self) { seconds in
+                        Text(Self.secondsLabel(seconds)).tag(seconds)
+                    }
+                }
+            }
+        }
+    }
+
+    private static func secondsLabel(_ seconds: Int) -> String {
+        if seconds >= 60, seconds % 60 == 0 {
+            let minutes = seconds / 60
+            return minutes == 1 ? "Minute" : "\(minutes) Minutes"
+        }
+        return "\(seconds) Seconds"
+    }
+}
+
+/// Preset choices plus the current value, so settings saved outside the presets still show.
+private func pickerOptions(_ presets: [Int], including current: Int) -> [Int] {
+    current > 0 ? Array(Set(presets + [current])).sorted() : presets
+}
+
+/// How the menu bar item looks with the chosen settings, idle and mid-build.
+private struct MenuBarPreview: View {
+    let style: MenuBarStyle
+    let timeFormat: TimeFormat
+
+    var body: some View {
+        HStack(spacing: 32) {
+            sample("Idle", state: .ready, elapsed: 134)
+            sample("Building", state: .building, elapsed: 72)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 6)
+    }
+
+    private func sample(_ caption: String, state: Deployment.State, elapsed: TimeInterval) -> some View {
+        let title = StatusTitle.text(projectName: "web", state: state, elapsed: elapsed, style: style, timeFormat: timeFormat)
+
+        return VStack(spacing: 6) {
+            HStack(spacing: 4) {
+                Image(systemName: state.symbolName)
+                    .foregroundStyle(Color(nsColor: state.color))
+                if !title.isEmpty {
+                    Text(title)
+                        .font(.system(size: 13, weight: .medium).monospacedDigit())
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(RoundedRectangle(cornerRadius: 6).fill(.quaternary))
+
+            Text(caption)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+// MARK: - Menu
+
+struct MenuPane: View {
+    @ObservedObject var viewModel: PreferencesViewModel
+
+    var body: some View {
+        Form {
+            Section {
+                MenuRowPreview(
+                    providerStyle: viewModel.providerStyle,
+                    environmentStyle: viewModel.environmentStyle,
+                    timeFormat: viewModel.timeFormat
+                )
+
+                Picker("Provider", selection: $viewModel.providerStyle) {
+                    Text("Icon").tag(ProviderStyle.icon)
+                    Text("Name").tag(ProviderStyle.name)
+                    Text("Hidden").tag(ProviderStyle.hidden)
+                }
+
+                Picker("Environment", selection: $viewModel.environmentStyle) {
+                    Text("Colored Badge").tag(EnvironmentStyle.badge)
+                    Text("Text").tag(EnvironmentStyle.text)
+                    Text("Hidden").tag(EnvironmentStyle.hidden)
+                }
+            } header: {
+                Text("Rows")
+            } footer: {
+                Text("The provider shows when both Vercel and Cloudflare are connected. Build times run from the start of the build to the end.")
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            Section {
+                Picker("Show up to", selection: $viewModel.limitByCount) {
+                    ForEach(pickerOptions([3, 5, 10, 20], including: viewModel.limitByCount), id: \.self) { count in
+                        Text("\(count) deployments").tag(count)
+                    }
+                    Divider()
+                    Text("No Limit").tag(0)
+                }
+
+                Picker("From the last", selection: $viewModel.limitByHours) {
+                    Text("Any Time").tag(0)
+                    Divider()
+                    ForEach(pickerOptions([1, 6, 24, 168], including: viewModel.limitByHours), id: \.self) { hours in
+                        Text(Self.hoursLabel(hours)).tag(hours)
+                    }
+                }
+            } header: {
+                Text("Recent")
+            } footer: {
+                Text("Builds in progress always show.")
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            Section {
+                Toggle("Show Projects section", isOn: $viewModel.showProjects)
+            } header: {
+                Text("Projects")
+            } footer: {
+                Text("Lists each project's latest production deployment, with its recent history on hover.")
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    private static func hoursLabel(_ hours: Int) -> String {
+        switch hours {
+        case 1: "Hour"
+        case 24: "Day"
+        case 168: "Week"
+        default: "\(hours) Hours"
+        }
+    }
+}
+
+/// Sample menu rows drawn the same way as the real menu, with both providers shown.
+private struct MenuRowPreview: View {
+    let providerStyle: ProviderStyle
+    let environmentStyle: EnvironmentStyle
+    let timeFormat: TimeFormat
+
+    var body: some View {
+        let now = Date()
+        var preferences = Preferences.default
+        preferences.providerStyle = providerStyle
+        preferences.environmentStyle = environmentStyle
+        preferences.timeFormat = timeFormat
+        let formatter = MenuRowFormatter(preferences: preferences, showsProvider: true, font: .menuFont(ofSize: 0), now: now)
+
+        return VStack(alignment: .leading, spacing: 6) {
+            ForEach(Self.samples(now: now), id: \.id) { deployment in
+                HStack(spacing: 6) {
+                    if let icon = StatusIcon.image(for: deployment.state) {
+                        Image(nsImage: icon)
+                            .frame(width: 16)
+                    }
+                    AttributedLabel(text: formatter.title(for: deployment, includeProject: true).attributed)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: 6).fill(.quaternary))
+    }
+
+    private static func samples(now: Date) -> [Deployment] {
+        func sample(_ id: String, _ provider: Deployment.Provider, _ project: String, _ state: Deployment.State, _ target: Deployment.Target, _ branch: String, started: TimeInterval, took: TimeInterval?) -> Deployment {
+            let start = now.addingTimeInterval(-started)
+            return Deployment(
+                id: id,
+                provider: provider,
+                projectName: project,
+                state: state,
+                target: target,
+                branch: branch,
+                commitMessage: nil,
+                createdAt: start,
+                buildStartedAt: start,
+                finishedAt: took.map { start.addingTimeInterval($0) },
+                link: nil
+            )
+        }
+
+        return [
+            sample("1", .vercel, "web", .building, .preview, "login-page", started: 72, took: nil),
+            sample("2", .cloudflare, "api", .ready, .production, "main", started: 900, took: 134),
+        ]
+    }
+}
+
+/// Shows an attributed string with its icons, which SwiftUI's Text can't draw.
+private struct AttributedLabel: NSViewRepresentable {
+    let text: NSAttributedString
+
+    func makeNSView(context: Context) -> NSTextField {
+        let field = NSTextField(labelWithAttributedString: text)
+        field.lineBreakMode = .byTruncatingTail
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return field
+    }
+
+    func updateNSView(_ field: NSTextField, context: Context) {
+        field.attributedStringValue = text
+    }
+}
+
+// MARK: - Accounts
+
+struct AccountsPane: View {
+    @ObservedObject var viewModel: PreferencesViewModel
+
+    var body: some View {
+        Form {
+            Section {
+                TokenRow(
+                    token: $viewModel.vercelToken,
+                    createLabel: "Create a Vercel token…",
+                    createURL: URL(string: "https://vercel.com/account/tokens")!
+                )
+                if viewModel.hasVercelToken {
+                    SelectionRows(
+                        title: "Teams",
+                        allLabel: "All Teams",
+                        specificLabel: "Specific Teams",
                         mode: $viewModel.teamSelectionMode,
                         selection: $viewModel.selectedTeamScopeIDs,
                         options: viewModel.availableTeamScopes,
                         isLoading: viewModel.teamsLoading
                     )
-
-                    SelectionList(
+                    SelectionRows(
                         title: "Projects",
-                        allLabel: "All Projects In Scope",
-                        selectedLabel: "Choose Specific Projects",
-                        loadingLabel: "Loading projects…",
-                        emptyLabel: "No projects found for the selected scope(s).",
+                        allLabel: "All Projects",
+                        specificLabel: "Specific Projects",
                         mode: $viewModel.projectSelectionMode,
                         selection: $viewModel.selectedProjectNames,
                         options: viewModel.availableProjects,
                         isLoading: viewModel.projectsLoading
                     )
-
-                    if let message = viewModel.vercelOptionsErrorMessage {
-                        Text("Couldn’t refresh scopes/projects: \(message)")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
-                    }
                 }
-
-                PreferencesSection("Cloudflare Workers Builds") {
-                    TokenField(
-                        label: "User API Token",
-                        token: $viewModel.cloudflareToken,
-                        help: "Create a user API token at dash.cloudflare.com/profile/api-tokens with Workers Builds Configuration: Read and Workers Scripts: Read. Leave blank to hide Cloudflare builds."
-                    )
-
-                    HStack {
-                        Text("Accounts & Workers")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Button("Refresh") {
-                            viewModel.refreshCloudflareOptions()
-                        }
-                        .disabled(!viewModel.hasCloudflareToken || viewModel.cloudflareLoading)
+            } header: {
+                ProviderHeader(title: "Vercel", status: viewModel.vercelStatus) {
+                    viewModel.refreshVercelOptions(reloadTeams: true)
+                }
+            } footer: {
+                switch viewModel.vercelStatus {
+                case let .failed(message):
+                    Text(message).foregroundStyle(.red)
+                case .connected:
+                    if let message = viewModel.vercelOptionsErrorMessage {
+                        Text("Couldn’t list teams: \(message)").foregroundStyle(.secondary)
                     }
+                case .notConnected, .checking:
+                    EmptyView()
+                }
+            }
 
-                    SelectionList(
+            Section {
+                TokenRow(
+                    token: $viewModel.cloudflareToken,
+                    createLabel: "Create a Cloudflare user token…",
+                    createURL: URL(string: "https://dash.cloudflare.com/profile/api-tokens")!
+                )
+                if viewModel.hasCloudflareToken {
+                    SelectionRows(
                         title: "Accounts",
-                        allLabel: "All Accessible Accounts",
-                        selectedLabel: "Choose Specific Accounts",
-                        loadingLabel: "Loading accounts…",
-                        emptyLabel: "No accounts available for this token.",
+                        allLabel: "All Accounts",
+                        specificLabel: "Specific Accounts",
                         mode: $viewModel.cloudflareAccountMode,
                         selection: $viewModel.selectedCloudflareAccountIDs,
                         options: viewModel.availableCloudflareAccounts,
                         isLoading: viewModel.cloudflareLoading
                     )
-
-                    SelectionList(
+                    SelectionRows(
                         title: "Workers",
                         allLabel: "All Workers",
-                        selectedLabel: "Choose Specific Workers",
-                        loadingLabel: "Loading Workers…",
-                        emptyLabel: "No Workers found for the selected account(s).",
+                        specificLabel: "Specific Workers",
                         mode: $viewModel.cloudflareWorkerMode,
                         selection: $viewModel.selectedCloudflareWorkers,
                         options: viewModel.availableCloudflareWorkers,
                         isLoading: viewModel.cloudflareLoading
                     )
-
-                    Footnote("Shows Workers connected to a git repository with Workers Builds. Workers deployed directly with wrangler have no builds to show.")
-
-                    if let message = viewModel.cloudflareOptionsErrorMessage {
-                        Text("Couldn’t refresh accounts/Workers: \(message)")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
-                    }
                 }
-
-                PreferencesSection("Filters") {
-                    LabeledField("Git Branches (optional)") {
-                        TextField("", text: $viewModel.gitBranches, prompt: Text("e.g. main, develop"))
-                            .textFieldStyle(.roundedBorder)
-                            .help("Comma-separated list of branches to filter (e.g. main, develop)")
-                    }
-
-                    LabeledField("Deployment Types") {
-                        HStack(spacing: 16) {
-                            Toggle("Production", isOn: $viewModel.showProduction)
-                            Toggle("Preview", isOn: $viewModel.showPreview)
-                        }
-                    }
-
-                    LabeledField("Deployment States") {
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack(spacing: 16) {
-                                Toggle("Ready", isOn: $viewModel.showReady)
-                                Toggle("Building", isOn: $viewModel.showBuilding)
-                            }
-                            HStack(spacing: 16) {
-                                Toggle("Error", isOn: $viewModel.showError)
-                                Toggle("Queued", isOn: $viewModel.showQueued)
-                            }
-                            Toggle("Canceled", isOn: $viewModel.showCanceled)
-                        }
-                    }
+            } header: {
+                ProviderHeader(title: "Cloudflare", status: viewModel.cloudflareStatus) {
+                    viewModel.refreshCloudflareOptions()
                 }
-
-                PreferencesSection("Limits") {
-                    LabeledField("Maximum Deployments (optional)") {
-                        NumericTextField(text: $viewModel.limitByCount, placeholder: "e.g. 5")
-                            .help("Maximum number of deployments to display (leave blank to ignore)")
+            } footer: {
+                VStack(alignment: .leading, spacing: 4) {
+                    if case let .failed(message) = viewModel.cloudflareStatus {
+                        Text(message).foregroundStyle(.red)
                     }
-
-                    LabeledField("Show Only Last X Hours (optional)") {
-                        NumericTextField(text: $viewModel.limitByHours, placeholder: "e.g. 24")
-                            .help("Only show deployments created within the last X hours (used when Maximum Deployments is empty)")
-                    }
-
-                    Footnote("Limit by count OR by time. If both are set, count takes priority.")
-                }
-
-                PreferencesSection("Refresh Intervals") {
-                    LabeledField("Idle Interval (seconds)") {
-                        NumericTextField(text: $viewModel.refreshIntervalIdle, placeholder: "Default: 15")
-                            .help("How often to check for new deployments when none are building (in seconds)")
-                    }
-
-                    LabeledField("Building Interval (seconds)") {
-                        NumericTextField(text: $viewModel.refreshIntervalBuilding, placeholder: "Default: 2")
-                            .help("How often to check for updates when deployments are building or queued (in seconds)")
-                    }
-
-                    Footnote("Lower values provide faster updates but may use more API requests. Defaults: 15s idle, 2s building.")
-                }
-
-                HStack {
-                    Text("Changes auto-save.")
-                        .font(.caption)
+                    Text("Use a user API token with Workers Builds Configuration: Read and Workers Scripts: Read. Shows Workers connected to git with Workers Builds; Workers deployed directly with Wrangler have no builds.")
                         .foregroundStyle(.secondary)
-                    Spacer()
-                    Button("Close") {
-                        PreferencesWindowController.shared.close()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .keyboardShortcut(.return)
                 }
-                .padding(.top, 8)
             }
-            .padding()
         }
-        .frame(minWidth: 560, minHeight: 760)
-        .background(Color(nsColor: .windowBackgroundColor))
     }
 }
 
-private struct TokenField: View {
-    let label: String
+private struct ProviderHeader: View {
+    let title: String
+    let status: ConnectionStatus
+    let refresh: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(title)
+            Spacer()
+            StatusBadge(status: status)
+            if status != .notConnected {
+                Button(action: refresh) {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(.borderless)
+                .help("Check the connection again")
+                .disabled(status == .checking)
+            }
+        }
+    }
+}
+
+private struct StatusBadge: View {
+    let status: ConnectionStatus
+
+    var body: some View {
+        switch status {
+        case .notConnected:
+            label("Not connected", color: .secondary)
+        case .checking:
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.mini)
+                Text("Checking…").foregroundStyle(.secondary)
+            }
+            .font(.callout)
+        case let .connected(summary):
+            label("Connected · \(summary)", color: .green)
+        case let .failed(message):
+            label("Couldn’t connect", color: .red)
+                .help(message)
+        }
+    }
+
+    private func label(_ text: String, color: Color) -> some View {
+        HStack(spacing: 6) {
+            Circle().fill(color).frame(width: 7, height: 7)
+            Text(text).foregroundStyle(.secondary)
+        }
+        .font(.callout)
+    }
+}
+
+private struct TokenRow: View {
     @Binding var token: String
-    let help: String
+    let createLabel: String
+    let createURL: URL
     @State private var isRevealed = false
 
     var body: some View {
-        LabeledField(label) {
-            HStack(spacing: 10) {
-                if isRevealed {
-                    TextField("", text: $token, prompt: Text("Enter your token"))
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(.body, design: .monospaced))
-                } else {
-                    PasteableSecureField(text: $token, placeholder: "Enter your token")
+        LabeledContent("API token") {
+            HStack(spacing: 6) {
+                Group {
+                    if isRevealed {
+                        TextField("", text: $token, prompt: Text("Paste your token"))
+                            .font(.system(.body, design: .monospaced))
+                    } else {
+                        PasteableSecureField(text: $token, placeholder: "Paste your token")
+                    }
                 }
+                .frame(width: 240)
 
-                Button(isRevealed ? "Hide" : "Show") {
+                Button {
                     isRevealed.toggle()
+                } label: {
+                    Image(systemName: isRevealed ? "eye.slash" : "eye")
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.borderless)
+                .help(isRevealed ? "Hide token" : "Show token")
             }
-            .help(help)
+        }
+
+        if token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            Link(createLabel, destination: createURL)
         }
     }
 }
 
-private struct PreferencesSection<Content: View>: View {
-    let title: String
-    @ViewBuilder let content: Content
-
-    init(_ title: String, @ViewBuilder content: () -> Content) {
-        self.title = title
-        self.content = content()
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title)
-                .font(.headline)
-            content
-        }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(nsColor: .controlBackgroundColor))
-        .cornerRadius(8)
-    }
-}
-
-private struct LabeledField<Content: View>: View {
-    let label: String
-    @ViewBuilder let content: Content
-
-    init(_ label: String, @ViewBuilder content: () -> Content) {
-        self.label = label
-        self.content = content()
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(label)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            content
-        }
-    }
-}
-
-private struct Footnote: View {
-    let text: String
-
-    init(_ text: String) {
-        self.text = text
-    }
-
-    var body: some View {
-        Text(text)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .padding(.top, 4)
-    }
-}
-
-/// An "all" / "choose specific" picker with a checkbox list for the specific case.
-private struct SelectionList: View {
+/// An "all" / "specific" picker, with a checkbox per option for the specific case.
+private struct SelectionRows: View {
     let title: String
     let allLabel: String
-    let selectedLabel: String
-    let loadingLabel: String
-    let emptyLabel: String
+    let specificLabel: String
     @Binding var mode: SelectionMode
     @Binding var selection: Set<String>
     let options: [SelectionOption]
     let isLoading: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(title)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Picker("", selection: $mode) {
-                    Text(allLabel).tag(SelectionMode.all)
-                    Text(selectedLabel).tag(SelectionMode.selected)
-                }
-                .pickerStyle(.menu)
-                .labelsHidden()
-            }
+        Picker(title, selection: $mode) {
+            Text(allLabel).tag(SelectionMode.all)
+            Text(specificLabel).tag(SelectionMode.selected)
+        }
 
+        if mode == .selected {
             if isLoading {
-                ProgressView(loadingLabel)
-                    .controlSize(.small)
-            } else if mode == .selected {
-                if options.isEmpty {
-                    Text(emptyLabel)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    VStack(alignment: .leading, spacing: 6) {
-                        ForEach(options) { option in
-                            Toggle(isOn: isSelected(option.id)) {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(option.title)
-                                    if let subtitle = option.subtitle {
-                                        Text(subtitle)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                            }
-                            .toggleStyle(.checkbox)
+                ProgressView().controlSize(.small)
+            } else if options.isEmpty {
+                Text("Nothing to choose from yet.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(options) { option in
+                    Toggle(isOn: isSelected(option.id)) {
+                        Text(option.title)
+                        if let subtitle = option.subtitle {
+                            Text(subtitle)
                         }
                     }
-                    .padding(8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color(nsColor: .textBackgroundColor).opacity(0.5))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-
-                    // An empty selection is saved as "all".
-                    if selection.isEmpty {
-                        Text("Nothing selected, so all are shown.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+                    .toggleStyle(.checkbox)
+                }
+                // An empty selection is saved as "all".
+                if selection.isEmpty {
+                    Text("Nothing selected, so all are shown.")
+                        .foregroundStyle(.secondary)
                 }
             }
         }
@@ -386,6 +574,38 @@ private struct SelectionList: View {
     }
 }
 
+// MARK: - Filters
+
+struct FiltersPane: View {
+    @ObservedObject var viewModel: PreferencesViewModel
+
+    var body: some View {
+        Form {
+            Section("Deployment Types") {
+                Toggle("Production", isOn: $viewModel.showProduction)
+                Toggle("Preview", isOn: $viewModel.showPreview)
+            }
+
+            Section("States") {
+                Toggle("Ready", isOn: $viewModel.showReady)
+                Toggle("Building", isOn: $viewModel.showBuilding)
+                Toggle("Queued", isOn: $viewModel.showQueued)
+                Toggle("Error", isOn: $viewModel.showError)
+                Toggle("Canceled", isOn: $viewModel.showCanceled)
+            }
+
+            Section {
+                TextField("Only these branches", text: $viewModel.gitBranches, prompt: Text("All branches"))
+            } footer: {
+                Text("Comma-separated, such as “main, develop”. Filters apply to both the recent list and Projects.")
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+// MARK: - Token field
+
 private struct PasteableSecureField: NSViewRepresentable {
     @Binding var text: String
     var placeholder: String
@@ -399,10 +619,9 @@ private struct PasteableSecureField: NSViewRepresentable {
         field.placeholderString = placeholder
         field.delegate = context.coordinator
         field.isBezeled = true
-        field.drawsBackground = true
+        field.bezelStyle = .roundedBezel
         field.focusRingType = .default
         field.usesSingleLineMode = true
-        field.isBordered = true
         return field
     }
 
@@ -454,18 +673,3 @@ private final class PasteEnabledSecureTextField: NSSecureTextField {
     }
 }
 
-private struct NumericTextField: View {
-    @Binding var text: String
-    let placeholder: String
-
-    var body: some View {
-        TextField("", text: $text, prompt: Text(placeholder))
-            .textFieldStyle(.roundedBorder)
-            .onChange(of: text) { newValue in
-                let filtered = newValue.filter(\.isNumber)
-                if filtered != newValue {
-                    text = filtered
-                }
-            }
-    }
-}

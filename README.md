@@ -121,9 +121,12 @@ Workers deployed directly with `wrangler deploy` (from your machine or another C
    - **Team Scopes** and **Projects** (Vercel): all, or specific ones
    - **Accounts** and **Workers** (Cloudflare): all, or specific ones
    - **Filters**: git branches, production/preview, and deployment states
-   - **Limits**: a maximum number of deployments, or only the last N hours
+   - **Menu Bar** (General): whether the project and build time appear next to the status icon, and the time format
+   - **Menu**: how rows mark the provider and environment, how many recent deployments to list, and whether to show the Projects section
 
-The menu bar shows an in-progress build if there is one, otherwise the latest deployment, with its build time. The menu lists recent deployments from both providers, newest first. Click one to open it in Vercel or the Cloudflare dashboard.
+The status icon reflects an in-progress build if there is one, otherwise the latest deployment. By default, the project and build time appear next to it only while a build is running; set **Show project and build time** to **Always** or **Never** to change that.
+
+The menu lists recent deployments from both providers, newest first. Each row shows the provider (a triangle for Vercel, a cloud for Cloudflare), a badge for production or preview, and the build time: "Building 1:12" while it runs, then "Built in 2:56" from the start of the build to the end. You can switch the provider and environment to plain text or hide them under **Menu** in Preferences. Below the recent list, the **Projects** section shows each project's latest production deployment, with its recent history in a submenu. Click any deployment to open it in Vercel or the Cloudflare dashboard.
 
 ## How It Works
 

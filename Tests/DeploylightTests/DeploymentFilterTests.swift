@@ -69,6 +69,17 @@ final class DeploymentFilterTests: XCTestCase {
         XCTAssertEqual(result.map(\.id), ["d0", "d1"])
     }
 
+    func testTimeWindowAndCountLimitBothApply() {
+        var preferences = Preferences.default
+        preferences.limitByCount = 3
+        preferences.limitByHours = 4
+
+        let deployments = (0..<4).map { deployment("d\($0)", createdHoursAgo: Double($0) * 3) }
+        let result = DeploymentFilter(preferences: preferences).apply(to: deployments, now: now)
+
+        XCTAssertEqual(result.map(\.id), ["d0", "d1"], "The window drops d2 and d3 even though the count allows 3")
+    }
+
     func testInProgressBuildsSurviveTheCountLimit() {
         var preferences = Preferences.default
         preferences.limitByCount = 1

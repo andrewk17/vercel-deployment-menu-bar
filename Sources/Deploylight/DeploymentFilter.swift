@@ -6,19 +6,27 @@ struct DeploymentFilter {
     let preferences: Preferences
 
     func apply(to deployments: [Deployment], now: Date = Date()) -> [Deployment] {
-        let filtered = deployments
+        limit(matching(deployments), now: now)
+    }
+
+    /// Deployments that pass the type, state, and branch filters, newest first.
+    func matching(_ deployments: [Deployment]) -> [Deployment] {
+        deployments
             .filter(matches)
             .sorted { $0.createdAt > $1.createdAt }
+    }
 
-        let limited: [Deployment]
-        if let limit = preferences.limitByCount, limit > 0 {
-            limited = Array(filtered.prefix(limit))
-        } else if let hours = preferences.limitByHours, hours > 0 {
+    /// Applies the time window, then the count limit, to newest-first deployments.
+    func limit(_ filtered: [Deployment], now: Date = Date()) -> [Deployment] {
+        var limited = filtered
+        if let hours = preferences.limitByHours, hours > 0 {
             let cutoff = now.addingTimeInterval(TimeInterval(-hours * 3600))
-            limited = filtered.filter { $0.createdAt >= cutoff }
-        } else {
-            return filtered
+            limited = limited.filter { $0.createdAt >= cutoff }
         }
+        if let count = preferences.limitByCount, count > 0 {
+            limited = Array(limited.prefix(count))
+        }
+        guard limited.count < filtered.count else { return filtered }
 
         // In-progress builds stay past the limits, so the status bar and faster polling
         // still track a build that newer, finished deployments have pushed out.

@@ -96,7 +96,26 @@ final class VercelClient {
     private let http: HTTPClient
 
     init(session: URLSession = .shared) {
-        http = HTTPClient(service: "Vercel", baseURL: "https://api.vercel.com", session: session)
+        http = HTTPClient(
+            service: "Vercel",
+            baseURL: "https://api.vercel.com",
+            session: session,
+            errorMessage: Self.errorMessage(from:)
+        )
+    }
+
+    /// Vercel errors look like `{"error": {"code": "forbidden", "message": "..."}}`.
+    static func errorMessage(from data: Data) -> String? {
+        struct ErrorResponse: Decodable {
+            struct Detail: Decodable {
+                let message: String?
+            }
+            let error: Detail
+        }
+        if let message = (try? JSONDecoder().decode(ErrorResponse.self, from: data))?.error.message, !message.isEmpty {
+            return message
+        }
+        return String(data: data, encoding: .utf8)
     }
 
     func teams(token: String) async throws -> [VercelTeam] {

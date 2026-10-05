@@ -8,6 +8,19 @@ enum SelectionMode: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+enum ConnectionStatus: Equatable {
+    case notConnected
+    case checking
+    /// A short summary, such as "12 projects".
+    case connected(String)
+    case failed(String)
+
+    var isFailure: Bool {
+        if case .failed = self { return true }
+        return false
+    }
+}
+
 struct SelectionOption: Identifiable, Hashable {
     let id: String
     let title: String
@@ -27,10 +40,17 @@ final class PreferencesViewModel: ObservableObject {
     @Published var showError = true
     @Published var showQueued = true
     @Published var showCanceled = true
-    @Published var limitByCount = ""
-    @Published var limitByHours = ""
-    @Published var refreshIntervalIdle = ""
-    @Published var refreshIntervalBuilding = ""
+    /// 0 means no limit.
+    @Published var limitByCount = 0
+    /// 0 means any time.
+    @Published var limitByHours = 0
+    @Published var refreshIntervalIdle = 15
+    @Published var refreshIntervalBuilding = 2
+    @Published var menuBarStyle = MenuBarStyle.auto
+    @Published var timeFormat = TimeFormat.clock
+    @Published var showProjects = true
+    @Published var providerStyle = ProviderStyle.icon
+    @Published var environmentStyle = EnvironmentStyle.badge
 
     @Published var cloudflareToken = ""
     @Published var cloudflareAccountMode = SelectionMode.all
@@ -91,6 +111,37 @@ final class PreferencesViewModel: ObservableObject {
         !cloudflareToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    var vercelStatus: ConnectionStatus {
+        guard hasVercelToken else { return .notConnected }
+        if teamsLoading || projectsLoading {
+            return .checking
+        }
+        let projects = availableProjects.filter { !$0.isMissing }.count
+        // Team-scoped tokens can't list teams but still work, so an error only counts as
+        // failing when no projects loaded either.
+        if let message = vercelOptionsErrorMessage, projects == 0 {
+            return .failed(message)
+        }
+        return .connected(Self.count(projects, "project"))
+    }
+
+    var cloudflareStatus: ConnectionStatus {
+        guard hasCloudflareToken else { return .notConnected }
+        if cloudflareLoading {
+            return .checking
+        }
+        if let message = cloudflareOptionsErrorMessage {
+            return .failed(message)
+        }
+        let accounts = availableCloudflareAccounts.filter { !$0.isMissing }.count
+        let workers = availableCloudflareWorkers.filter { !$0.isMissing }.count
+        return .connected("\(Self.count(accounts, "account")) · \(Self.count(workers, "Worker"))")
+    }
+
+    private static func count(_ value: Int, _ noun: String) -> String {
+        "\(value) \(noun)\(value == 1 ? "" : "s")"
+    }
+
     /// Discards unsaved edits and reloads from the store.
     func reset() {
         hydrate(from: store.current)
@@ -116,6 +167,13 @@ final class PreferencesViewModel: ObservableObject {
             return
         }
 
+        // A teams lookup that this replaces still needs to finish.
+        let reloadTeams = reloadTeams || teamsLoading
+        // Mark loading now, not when the task starts, so the status never shows stale counts.
+        if reloadTeams {
+            teamsLoading = true
+        }
+        projectsLoading = true
         vercelLookupTask = Task { [weak self] in
             await self?.loadVercelOptions(token: token, reloadTeams: reloadTeams)
         }
@@ -134,10 +192,15 @@ final class PreferencesViewModel: ObservableObject {
         showError = current.showError
         showQueued = current.showQueued
         showCanceled = current.showCanceled
-        limitByCount = current.limitByCount.map(String.init) ?? ""
-        limitByHours = current.limitByHours.map(String.init) ?? ""
-        refreshIntervalIdle = current.refreshIntervalIdle.map(String.init) ?? ""
-        refreshIntervalBuilding = current.refreshIntervalBuilding.map(String.init) ?? ""
+        limitByCount = current.limitByCount ?? 0
+        limitByHours = current.limitByHours ?? 0
+        refreshIntervalIdle = current.refreshIntervalIdle ?? 15
+        refreshIntervalBuilding = current.refreshIntervalBuilding ?? 2
+        menuBarStyle = current.menuBarStyle
+        timeFormat = current.timeFormat
+        showProjects = current.showProjects
+        providerStyle = current.providerStyle
+        environmentStyle = current.environmentStyle
 
         let teamIds = current.teamIdList
         teamSelectionMode = teamIds.isEmpty ? .all : .selected
@@ -213,10 +276,15 @@ final class PreferencesViewModel: ObservableObject {
             preferences.showError = showError
             preferences.showQueued = showQueued
             preferences.showCanceled = showCanceled
-            preferences.limitByCount = Int(limitByCount)
-            preferences.limitByHours = Int(limitByHours)
-            preferences.refreshIntervalIdle = Int(refreshIntervalIdle)
-            preferences.refreshIntervalBuilding = Int(refreshIntervalBuilding)
+            preferences.limitByCount = limitByCount > 0 ? limitByCount : nil
+            preferences.limitByHours = limitByHours > 0 ? limitByHours : nil
+            preferences.refreshIntervalIdle = refreshIntervalIdle
+            preferences.refreshIntervalBuilding = refreshIntervalBuilding
+            preferences.menuBarStyle = menuBarStyle
+            preferences.timeFormat = timeFormat
+            preferences.showProjects = showProjects
+            preferences.providerStyle = providerStyle
+            preferences.environmentStyle = environmentStyle
         }
     }
 
@@ -225,6 +293,9 @@ final class PreferencesViewModel: ObservableObject {
         guard mode == .selected else { return "" }
         return selection.sorted().joined(separator: ",")
     }
+
+    // A newer lookup cancels the previous one. A cancelled lookup returns without touching
+    // any state, so it can't clear the loading flags the newer lookup just set.
 
     private func loadVercelOptions(token: String, reloadTeams: Bool) async {
         vercelOptionsErrorMessage = nil
@@ -235,22 +306,30 @@ final class PreferencesViewModel: ObservableObject {
                 let teams = try await vercelClient.teams(token: token)
                     .map { SelectionOption(id: $0.slug, title: $0.name, subtitle: $0.slug) }
                     .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+                guard !Task.isCancelled else { return }
                 availableTeamScopes = Self.options([Self.personalScope] + teams, keeping: selectedTeamScopeIDs)
-            } catch where !Self.isCancellation(error) {
-                availableTeamScopes = Self.options([Self.personalScope], keeping: selectedTeamScopeIDs)
-                vercelOptionsErrorMessage = error.localizedDescription
-            } catch {}
+            } catch {
+                guard !Task.isCancelled else { return }
+                if !Self.isCancellation(error) {
+                    availableTeamScopes = Self.options([Self.personalScope], keeping: selectedTeamScopeIDs)
+                    vercelOptionsErrorMessage = error.localizedDescription
+                }
+            }
             teamsLoading = false
         }
 
         projectsLoading = true
         do {
             let names = try await fetchProjectNamesForCurrentScope(token: token)
+            guard !Task.isCancelled else { return }
             availableProjects = Self.options(names.map { SelectionOption(id: $0, title: $0) }, keeping: selectedProjectNames)
-        } catch where !Self.isCancellation(error) {
-            availableProjects = Self.options([], keeping: selectedProjectNames)
-            vercelOptionsErrorMessage = error.localizedDescription
-        } catch {}
+        } catch {
+            guard !Task.isCancelled else { return }
+            if !Self.isCancellation(error) {
+                availableProjects = Self.options([], keeping: selectedProjectNames)
+                vercelOptionsErrorMessage = error.localizedDescription
+            }
+        }
         projectsLoading = false
     }
 
@@ -289,6 +368,7 @@ final class PreferencesViewModel: ObservableObject {
             return
         }
 
+        cloudflareLoading = true
         cloudflareLookupTask = Task { [weak self] in
             await self?.loadCloudflareOptions(token: token)
         }
@@ -297,23 +377,28 @@ final class PreferencesViewModel: ObservableObject {
     private func loadCloudflareOptions(token: String) async {
         cloudflareLoading = true
         cloudflareOptionsErrorMessage = nil
-        defer { cloudflareLoading = false }
 
         do {
             let accounts = try await cloudflareClient.accounts(token: token)
                 .map { SelectionOption(id: $0.id, title: $0.name, subtitle: $0.id) }
                 .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+            guard !Task.isCancelled else { return }
             availableCloudflareAccounts = Self.options(accounts, keeping: selectedCloudflareAccountIDs)
 
             let accountIds = cloudflareAccountMode == .all ? accounts.map(\.id) : Array(selectedCloudflareAccountIDs)
             let workers = try await gatherConcurrently(accountIds) { accountId in
                 try await self.cloudflareClient.workers(token: token, accountId: accountId)
             }
+            guard !Task.isCancelled else { return }
             let names = Set(workers.map(\.id)).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
             availableCloudflareWorkers = Self.options(names.map { SelectionOption(id: $0, title: $0) }, keeping: selectedCloudflareWorkers)
-        } catch where !Self.isCancellation(error) {
-            cloudflareOptionsErrorMessage = error.localizedDescription
-        } catch {}
+        } catch {
+            guard !Task.isCancelled else { return }
+            if !Self.isCancellation(error) {
+                cloudflareOptionsErrorMessage = error.localizedDescription
+            }
+        }
+        cloudflareLoading = false
     }
 
     /// Appends saved selections a lookup didn't return. A failed request or a change in access

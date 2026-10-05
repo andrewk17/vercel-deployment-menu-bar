@@ -1,5 +1,40 @@
 import Foundation
 
+/// What the menu bar item shows next to the status icon.
+enum MenuBarStyle: String, Codable, CaseIterable {
+    /// The project and build time while a build is running, otherwise just the icon.
+    case auto
+    /// Just the icon.
+    case compact
+    /// The project and build time, always.
+    case detailed
+}
+
+/// How build durations are written.
+enum TimeFormat: String, Codable, CaseIterable {
+    /// "2:14"
+    case clock
+    /// "2m 14s"
+    case units
+    /// "2m"
+    case minutes
+}
+
+/// How menu rows show which provider a deployment came from, when more than one is in use.
+enum ProviderStyle: String, Codable, CaseIterable {
+    case icon
+    case name
+    case hidden
+}
+
+/// How menu rows show whether a deployment is production or preview.
+enum EnvironmentStyle: String, Codable, CaseIterable {
+    /// A colored badge, filled for production and outlined for preview.
+    case badge
+    case text
+    case hidden
+}
+
 struct Preferences: Codable, Equatable {
     static let personalScopeIdentifier = "__personal__"
 
@@ -25,6 +60,12 @@ struct Preferences: Codable, Equatable {
     var limitByHours: Int?
     var refreshIntervalIdle: Int?
     var refreshIntervalBuilding: Int?
+    var menuBarStyle: MenuBarStyle
+    var timeFormat: TimeFormat
+    /// Whether the menu lists each project's latest deployment below the recent ones.
+    var showProjects: Bool
+    var providerStyle: ProviderStyle
+    var environmentStyle: EnvironmentStyle
 
     static let `default` = Preferences(
         vercelToken: "",
@@ -44,7 +85,12 @@ struct Preferences: Codable, Equatable {
         limitByCount: 5,
         limitByHours: nil,
         refreshIntervalIdle: 15,
-        refreshIntervalBuilding: 2
+        refreshIntervalBuilding: 2,
+        menuBarStyle: .auto,
+        timeFormat: .clock,
+        showProjects: true,
+        providerStyle: .icon,
+        environmentStyle: .badge
     )
 
     var hasVercelToken: Bool {
@@ -121,7 +167,13 @@ extension Preferences {
             limitByCount: try container.decodeIfPresent(Int.self, forKey: .limitByCount),
             limitByHours: try container.decodeIfPresent(Int.self, forKey: .limitByHours),
             refreshIntervalIdle: try container.decodeIfPresent(Int.self, forKey: .refreshIntervalIdle),
-            refreshIntervalBuilding: try container.decodeIfPresent(Int.self, forKey: .refreshIntervalBuilding)
+            refreshIntervalBuilding: try container.decodeIfPresent(Int.self, forKey: .refreshIntervalBuilding),
+            // An unrecognized style (say, from a newer version) falls back to the default.
+            menuBarStyle: MenuBarStyle(rawValue: try value(.menuBarStyle, defaults.menuBarStyle.rawValue)) ?? defaults.menuBarStyle,
+            timeFormat: TimeFormat(rawValue: try value(.timeFormat, defaults.timeFormat.rawValue)) ?? defaults.timeFormat,
+            showProjects: try value(.showProjects, defaults.showProjects),
+            providerStyle: ProviderStyle(rawValue: try value(.providerStyle, defaults.providerStyle.rawValue)) ?? defaults.providerStyle,
+            environmentStyle: EnvironmentStyle(rawValue: try value(.environmentStyle, defaults.environmentStyle.rawValue)) ?? defaults.environmentStyle
         )
     }
 }

@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 @MainActor
-final class StatusItemController {
+final class StatusItemController: NSObject, NSMenuDelegate {
     private let statusItem: NSStatusItem
     private let menu = NSMenu()
     private let deploymentService = DeploymentService()
@@ -11,18 +11,45 @@ final class StatusItemController {
     private var tickTimer: Timer?
     private var refreshTask: Task<Void, Never>?
     private var latestDeployments: [Deployment] = []
+    private var projects: [ProjectSummary] = []
+    /// Every fetched deployment, filtered or not, so an open row still updates when its
+    /// build finishes into a hidden state.
+    private var deploymentsByID: [String: Deployment] = [:]
     private var errors: [Deployment.Provider: Error] = [:]
     private var configuredProviders: [Deployment.Provider] = []
     private var lastFetchDate: Date?
 
     private var preferencesObserver: NSObjectProtocol?
 
-    init() {
+    /// A menu row that's updated in place while the menu is open.
+    private struct LiveRow {
+        enum Source {
+            case deployment(id: String, includeProject: Bool)
+            case project(provider: Deployment.Provider, name: String)
+        }
+
+        let item: NSMenuItem
+        let source: Source
+    }
+
+    private var liveRows: [LiveRow] = []
+    /// What each row was last set to. An item's own title can't be compared, since an
+    /// attributed title with icons rewrites it.
+    private var shownTitles: [ObjectIdentifier: String] = [:]
+    private var isMenuOpen = false
+    /// Fixed-width digits keep rows, and so the menu, from changing width as times tick.
+    private static let rowFont = NSFont.monospacedDigitSystemFont(ofSize: NSFont.menuFont(ofSize: 0).pointSize, weight: .regular)
+
+    override init() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        super.init()
+        // The menu is built as it opens rather than on every refresh, so it doesn't
+        // shift or redraw under the pointer while it's open.
+        menu.delegate = self
         statusItem.menu = menu
         statusItem.button?.imagePosition = .imageLeft
         statusItem.button?.font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .medium)
-        statusItem.button?.title = "VRC"
+        statusItem.button?.image = NSImage(systemSymbolName: "circle", accessibilityDescription: nil)
     }
 
     func start() {
@@ -36,7 +63,6 @@ final class StatusItemController {
             }
         }
 
-        buildMenu()
         startTickTimer()
         refreshDeployments()
     }
@@ -78,6 +104,7 @@ final class StatusItemController {
 
     @objc private func tick() {
         updateStatusButton()
+        updateOpenMenu()
     }
 
     private func scheduleNextRefresh() {
@@ -117,6 +144,8 @@ final class StatusItemController {
         guard !configuredProviders.isEmpty else {
             refreshTask = nil
             latestDeployments = []
+            projects = []
+            deploymentsByID = [:]
             errors = [:]
             render()
             return
@@ -126,7 +155,11 @@ final class StatusItemController {
             let snapshot = await deploymentService.fetch(preferences: preferences)
             guard !Task.isCancelled else { return }
 
-            latestDeployments = DeploymentFilter(preferences: preferences).apply(to: snapshot.deployments)
+            let filter = DeploymentFilter(preferences: preferences)
+            let matching = filter.matching(snapshot.deployments)
+            latestDeployments = filter.limit(matching)
+            projects = ProjectSummary.summaries(from: matching)
+            deploymentsByID = Dictionary(snapshot.deployments.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             errors = snapshot.errors
             if snapshot.errors.count < configuredProviders.count {
                 lastFetchDate = Date()
@@ -140,8 +173,60 @@ final class StatusItemController {
     // MARK: - Rendering
 
     private func render() {
-        buildMenu()
         updateStatusButton()
+        updateOpenMenu()
+    }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        buildMenu()
+    }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        isMenuOpen = true
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        isMenuOpen = false
+    }
+
+    /// Refreshes the open menu's rows in place: build times tick, and a refresh can turn a
+    /// building row into a finished one. Rows are only added or removed when it reopens.
+    private func updateOpenMenu() {
+        guard isMenuOpen else { return }
+
+        let formatter = rowFormatter()
+        for row in liveRows {
+            switch row.source {
+            case let .deployment(id, includeProject):
+                guard let deployment = deploymentsByID[id] else { continue }
+                setTitle(formatter.title(for: deployment, includeProject: includeProject), on: row.item)
+                setImage(StatusIcon.image(for: deployment.state), on: row.item)
+            case let .project(provider, name):
+                guard let project = projects.first(where: { $0.provider == provider && $0.name.lowercased() == name }) else { continue }
+                setTitle(formatter.title(for: project), on: row.item)
+                setImage(StatusIcon.image(for: project.headline.state), on: row.item)
+            }
+        }
+    }
+
+    private func rowFormatter() -> MenuRowFormatter {
+        MenuRowFormatter(
+            preferences: PreferencesStore.shared.current,
+            showsProvider: configuredProviders.count > 1,
+            font: Self.rowFont
+        )
+    }
+
+    private func setTitle(_ title: MenuRowTitle, on item: NSMenuItem) {
+        let key = ObjectIdentifier(item)
+        guard shownTitles[key] != title.plain else { return }
+        shownTitles[key] = title.plain
+        item.attributedTitle = title.attributed
+    }
+
+    private func setImage(_ image: NSImage?, on item: NSMenuItem) {
+        guard item.image !== image else { return }
+        item.image = image
     }
 
     private func updateStatusButton() {
@@ -150,7 +235,14 @@ final class StatusItemController {
         // An in-progress build is the most useful thing to show, even if a newer one finished.
         if let shown = latestDeployments.first(where: { $0.state.isActive }) ?? latestDeployments.first {
             button.image = StatusIcon.image(for: shown.state)
-            button.title = statusTitle(for: shown)
+            let preferences = PreferencesStore.shared.current
+            button.title = StatusTitle.text(
+                projectName: shown.projectName,
+                state: shown.state,
+                elapsed: shown.elapsed(),
+                style: preferences.menuBarStyle,
+                timeFormat: preferences.timeFormat
+            )
         } else if configuredProviders.isEmpty {
             button.title = "No Token"
             button.image = NSImage(systemSymbolName: "key.slash", accessibilityDescription: nil)
@@ -158,33 +250,17 @@ final class StatusItemController {
             button.title = "Error"
             button.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: nil)
         } else {
-            button.title = "VRC"
+            button.title = ""
             button.image = NSImage(systemSymbolName: "circle", accessibilityDescription: nil)
         }
+        button.imagePosition = button.title.isEmpty ? .imageOnly : .imageLeft
     }
 
-    private func statusTitle(for deployment: Deployment) -> String {
-        let label = String(deployment.projectName.prefix(3)).uppercased()
-        guard let duration = elapsedDuration(for: deployment) else { return label }
-        return "\(label) \(Formatting.duration(duration))"
-    }
-
-    /// Time spent building so far, or the final build time once finished.
-    private func elapsedDuration(for deployment: Deployment) -> TimeInterval? {
-        switch deployment.state {
-        case .building:
-            return Date().timeIntervalSince(deployment.buildStartedAt)
-        case .queued:
-            return Date().timeIntervalSince(deployment.createdAt)
-        case .ready, .error:
-            return deployment.finishedAt.map { max($0.timeIntervalSince(deployment.buildStartedAt), 0) }
-        case .canceled, .unknown:
-            return nil
-        }
-    }
 
     private func buildMenu() {
         menu.removeAllItems()
+        liveRows = []
+        shownTitles = [:]
 
         if configuredProviders.isEmpty {
             menu.addItem(disabledItem("Add a Vercel or Cloudflare token in Preferences"))
@@ -202,13 +278,21 @@ final class StatusItemController {
             }
         }
 
+        let formatter = rowFormatter()
+        let showsProjects = PreferencesStore.shared.current.showProjects && !projects.isEmpty
+        if showsProjects, !latestDeployments.isEmpty {
+            menu.addItem(sectionHeader("Recent"))
+        }
         for deployment in latestDeployments {
-            let item = NSMenuItem(title: menuTitle(for: deployment), action: #selector(openURL(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = deployment.link
-            item.toolTip = Self.sanitizedCommitToolTip(from: deployment.commitMessage)
-            item.image = StatusIcon.image(for: deployment.state)
-            menu.addItem(item)
+            menu.addItem(deploymentItem(for: deployment, formatter: formatter))
+        }
+
+        if showsProjects {
+            menu.addItem(.separator())
+            menu.addItem(sectionHeader("Projects"))
+            for project in projects {
+                menu.addItem(projectItem(for: project, formatter: formatter))
+            }
         }
 
         if let lastFetchDate {
@@ -246,6 +330,39 @@ final class StatusItemController {
         }
     }
 
+    private func deploymentItem(for deployment: Deployment, includeProject: Bool = true, formatter: MenuRowFormatter) -> NSMenuItem {
+        let item = NSMenuItem(title: "", action: #selector(openURL(_:)), keyEquivalent: "")
+        item.target = self
+        item.representedObject = deployment.link
+        item.toolTip = Self.sanitizedCommitToolTip(from: deployment.commitMessage)
+        setTitle(formatter.title(for: deployment, includeProject: includeProject), on: item)
+        item.image = StatusIcon.image(for: deployment.state)
+        liveRows.append(LiveRow(item: item, source: .deployment(id: deployment.id, includeProject: includeProject)))
+        return item
+    }
+
+    /// A project's latest production deployment, with its recent history in a submenu.
+    private func projectItem(for project: ProjectSummary, formatter: MenuRowFormatter) -> NSMenuItem {
+        let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        setTitle(formatter.title(for: project), on: item)
+        item.image = StatusIcon.image(for: project.headline.state)
+        liveRows.append(LiveRow(item: item, source: .project(provider: project.provider, name: project.name.lowercased())))
+
+        let submenu = NSMenu()
+        for deployment in project.deployments.prefix(ProjectSummary.historyDepth) {
+            submenu.addItem(deploymentItem(for: deployment, includeProject: false, formatter: formatter))
+        }
+        item.submenu = submenu
+        return item
+    }
+
+    private func sectionHeader(_ title: String) -> NSMenuItem {
+        if #available(macOS 14.0, *) {
+            return .sectionHeader(title: title)
+        }
+        return disabledItem(title)
+    }
+
     private func disabledItem(_ title: String) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
         item.isEnabled = false
@@ -256,34 +373,6 @@ final class StatusItemController {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
         item.target = self
         return item
-    }
-
-    private func menuTitle(for deployment: Deployment) -> String {
-        let name = deployment.branch.map { "\(deployment.projectName) (\($0))" } ?? deployment.projectName
-
-        var statusParts: [String] = []
-        if configuredProviders.count > 1 {
-            statusParts.append(deployment.provider.rawValue)
-        }
-        if let target = deployment.target {
-            statusParts.append(target.rawValue)
-        }
-        statusParts.append(statusDescription(for: deployment))
-        statusParts.append(Formatting.time(deployment.buildStartedAt))
-
-        return "\(name) — \(statusParts.joined(separator: " • "))"
-    }
-
-    private func statusDescription(for deployment: Deployment) -> String {
-        let duration = elapsedDuration(for: deployment).map { " \(Formatting.duration($0))" } ?? ""
-        switch deployment.state {
-        case .building: return "Building\(duration)"
-        case .queued: return "Queued\(duration)"
-        case .ready: return "Ready\(duration)"
-        case .error: return "Error"
-        case .canceled: return "Canceled"
-        case .unknown: return "Unknown"
-        }
     }
 
     nonisolated static func sanitizedCommitToolTip(from rawMessage: String?) -> String? {
@@ -308,58 +397,5 @@ final class StatusItemController {
             return collapsed
         }
         return String(collapsed.prefix(maxLength - 1)) + "…"
-    }
-}
-
-private enum Formatting {
-    private static let timeFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .none
-        formatter.timeStyle = .short
-        return formatter
-    }()
-
-    static func time(_ date: Date) -> String {
-        timeFormatter.string(from: date)
-    }
-
-    static func duration(_ seconds: TimeInterval) -> String {
-        let total = Int(seconds)
-        let hours = total / 3600
-        let minutes = (total % 3600) / 60
-        let remaining = total % 60
-
-        if hours > 0 {
-            return "\(hours)h \(minutes)m \(remaining)s"
-        } else if minutes > 0 {
-            return "\(minutes)m \(remaining)s"
-        } else {
-            return "\(remaining)s"
-        }
-    }
-}
-
-@MainActor
-private enum StatusIcon {
-    private static var cache: [Deployment.State: NSImage] = [:]
-
-    static func image(for state: Deployment.State) -> NSImage? {
-        if let cached = cache[state] {
-            return cached
-        }
-
-        let (symbolName, color): (String, NSColor) = switch state {
-        case .ready: ("checkmark.circle.fill", .systemGreen)
-        case .error: ("xmark.circle.fill", .systemRed)
-        case .building: ("hourglass", .systemYellow)
-        case .queued: ("clock.fill", .systemOrange)
-        case .canceled: ("minus.circle.fill", .systemGray)
-        case .unknown: ("questionmark.circle", .systemGray)
-        }
-
-        let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [color]))
-        cache[state] = image
-        return image
     }
 }
