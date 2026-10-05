@@ -1,5 +1,5 @@
 import XCTest
-@testable import vercel_deployment_menu_bar
+@testable import Deploylight
 
 final class StatusItemControllerTests: XCTestCase {
     func testSanitizedCommitToolTipTruncatesLongMultilineMessage() {

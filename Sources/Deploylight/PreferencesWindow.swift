@@ -15,7 +15,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
             defer: false
         )
         window.center()
-        window.title = "Deployment Status Preferences"
+        window.title = "Deploylight Preferences"
         super.init(window: window)
         window.contentViewController = NSHostingController(rootView: PreferencesView(viewModel: viewModel))
         window.delegate = self

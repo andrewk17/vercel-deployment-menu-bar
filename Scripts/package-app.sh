@@ -1,13 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")"/.. && pwd)
-PRODUCT_NAME="Vercel Deployment Menu Bar"
+PRODUCT_NAME="Deploylight"
 BUILD_DIR="$ROOT/.build/release"
-EXECUTABLE="$BUILD_DIR/vercel-deployment-menu-bar"
+EXECUTABLE="$BUILD_DIR/Deploylight"
 APP_DIR="$ROOT/build/${PRODUCT_NAME}.app"
-# Defaults to the latest release tag; override with VERSION=x.y.z.
-VERSION="${VERSION:-$(git -C "$ROOT" describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')}"
+# Kept from the app's original name so existing installs keep their settings and
+# third-party install recipes keep matching the code signature.
+BUNDLE_ID="com.andrew.vercel-deployment-menu-bar"
+# Defaults to the latest release tag, skipping pre-releases; override with VERSION=x.y.z
+# or VERSION=x.y.z-beta.1.
+VERSION="${VERSION:-$({ git -C "$ROOT" describe --tags --abbrev=0 --exclude '*-*' 2>/dev/null || true; } | sed 's/^v//')}"
 VERSION="${VERSION:-0.0.0}"
+# Bundle versions must be numeric, so a pre-release suffix only appears in the file name.
+BUNDLE_VERSION="${VERSION%%-*}"
+export VERSION
+
+# Always package a fresh build, never a stale binary left in .build.
+swift build -c release --package-path "$ROOT"
 
 rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS"
@@ -19,21 +29,21 @@ cat > "$APP_DIR/Contents/Info.plist" <<INFO
 <plist version="1.0">
 <dict>
     <key>CFBundleDisplayName</key>
-    <string>Vercel Deployment Menu Bar</string>
+    <string>${PRODUCT_NAME}</string>
     <key>CFBundleExecutable</key>
-    <string>vercel-deployment-menu-bar</string>
+    <string>Deploylight</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
-    <string>com.andrew.vercel-deployment-menu-bar</string>
+    <string>${BUNDLE_ID}</string>
     <key>CFBundleName</key>
-    <string>Vercel Deployment Menu Bar</string>
+    <string>${PRODUCT_NAME}</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>${VERSION}</string>
+    <string>${BUNDLE_VERSION}</string>
     <key>CFBundleVersion</key>
-    <string>${VERSION}</string>
+    <string>${BUNDLE_VERSION}</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
     <key>LSUIElement</key>
@@ -45,7 +55,7 @@ cat > "$APP_DIR/Contents/Info.plist" <<INFO
 INFO
 
 cp "$EXECUTABLE" "$APP_DIR/Contents/MacOS/"
-chmod +x "$APP_DIR/Contents/MacOS/vercel-deployment-menu-bar"
+chmod +x "$APP_DIR/Contents/MacOS/Deploylight"
 
 # Copy app icon if it exists
 if [ -f "$ROOT/Resources/AppIcon.icns" ]; then

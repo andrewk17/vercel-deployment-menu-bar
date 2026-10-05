@@ -15,7 +15,7 @@ set -euo pipefail
 #    export APPLE_API_KEY_PATH="$HOME/.private_keys/AuthKey_XXXXXXXXXX.p8"
 
 ROOT=$(cd "$(dirname "$0")"/.. && pwd)
-PRODUCT_NAME="Vercel Deployment Menu Bar"
+PRODUCT_NAME="Deploylight"
 APP_DIR="$ROOT/build/${PRODUCT_NAME}.app"
 
 # Check if environment variables are set
@@ -28,6 +28,10 @@ if [ -z "${APPLE_API_KEY_ID:-}" ] || [ -z "${APPLE_API_ISSUER:-}" ] || [ -z "${A
     echo "  APPLE_API_KEY_PATH     - Path to your .p8 file"
     echo ""
     echo "See the script header for detailed setup instructions."
+    # A release must be notarized, so don't let a missing key pass silently.
+    if [ -n "${RELEASE:-}" ]; then
+        exit 1
+    fi
     exit 0
 fi
 
@@ -53,3 +57,9 @@ xcrun stapler validate "$APP_DIR"
 rm "$ZIP_PATH"
 
 echo "✅ App successfully notarized and stapled!"
+
+# Zip the stapled app for the release, so it opens without a network check.
+RELEASE_ZIP="$ROOT/build/${PRODUCT_NAME}-v${VERSION:-0.0.0}.zip"
+rm -f "$RELEASE_ZIP"
+ditto -c -k --keepParent "$APP_DIR" "$RELEASE_ZIP"
+echo "Release archive: $RELEASE_ZIP"

@@ -1,0 +1,11 @@
+// Serves the landing page in docs/ as static assets on Cloudflare Workers.
+{
+  "name": "deploylight",
+  "compatibility_date": "2026-05-01",
+  "workers_dev": true,
+  "preview_urls": false,
+  "assets": {
+    "directory": "./docs",
+    "html_handling": "auto-trailing-slash"
+  }
+}

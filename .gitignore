@@ -13,3 +13,7 @@ DerivedData/
 # IDE
 .idea/
 .vscode/
+
+# Cloudflare
+.env.cloudflare.local
+.wrangler/

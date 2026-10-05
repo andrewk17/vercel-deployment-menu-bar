@@ -1,13 +1,19 @@
-# Vercel Deployment Menu Bar for macOS (Open Source)
+<img src="./app-icon.png" alt="Deploylight app icon" width="96">
 
-A lightweight **macOS menu bar app** to **monitor Vercel deployments and Cloudflare Workers Builds** in real time — see build/ready/error status at a glance and jump to details with one click.
+# Deploylight
 
-![Vercel deployment status in macOS menu bar showing build/ready/error states](./vercel-menu-bar-deployment-status-macos.png)
+**Vercel and Cloudflare deploy status in your Mac menu bar.**
+
+Deploylight is a lightweight, open-source **macOS menu bar app** that shows your **deployment status** in real time. It works with **Vercel** deployments and **Cloudflare Workers Builds**. See build/ready/error status at a glance and jump to details with one click.
+
+*Formerly Vercel Deployment Menu Bar.*
+
+![Deployment status in the macOS menu bar showing build/ready/error states](./vercel-menu-bar-deployment-status-macos.png)
 
 **Features**
 - Real-time deployment status (build, ready, error)
-- Personal or Team tokens
-- Optional Cloudflare Workers Builds, merged into the same list
+- Vercel deployments and Cloudflare Workers Builds, merged into one list
+- Vercel personal or team tokens
 - Team, project, branch, and state filters
 - Notarized, code-signed app (no Gatekeeper warnings)
 - Native Swift app — lightweight and fast
@@ -17,10 +23,10 @@ A lightweight **macOS menu bar app** to **monitor Vercel deployments and Cloudfl
 
 ### Pre-built Binary (Easiest)
 
-1. Download the latest release from the [Releases](https://github.com/andrewk17/vercel-deployment-menu-bar/releases) page
+1. Download the latest release from the [Releases](https://github.com/andrewk17/deploylight/releases) page
 2. Unzip and move the app to your Applications folder
 3. Launch the app
-4. Click the menu bar icon and select "Preferences" to configure your Vercel API token
+4. Click the menu bar icon and select "Preferences" to add your Vercel and/or Cloudflare API token
 
 ### Build from Source
 
@@ -31,16 +37,13 @@ Requirements:
 
 ```bash
 # Clone the repository
-git clone https://github.com/andrewk17/vercel-deployment-menu-bar.git
-cd vercel-deployment-menu-bar
+git clone https://github.com/andrewk17/deploylight.git
+cd deploylight
 
-# Build the app
-swift build -c release
-
-# Package as .app bundle (creates a signed and notarized app)
+# Build and package as an .app bundle (signed, and notarized if configured)
 ./Scripts/package-app.sh
 
-# The app will be created at: build/Vercel Deployment Menu Bar.app
+# The app will be created at: build/Deploylight.app
 ```
 
 #### For Developers: Code Signing & Notarization
@@ -82,7 +85,7 @@ If notarization credentials aren't configured, the script will still sign the ap
 
 ## Configuration
 
-### Step 1: Generate a Vercel API Token
+### Step 1 (Optional): Generate a Vercel API Token
 
 1. Go to [Vercel Account Settings → Tokens](https://vercel.com/account/tokens)
 2. Click "Create Token"
@@ -111,7 +114,7 @@ Workers deployed directly with `wrangler deploy` (from your machine or another C
 
 ### Step 3: Configure the App
 
-1. Launch "Vercel Deployment Menu Bar" from your Applications folder
+1. Launch Deploylight from your Applications folder
 2. Click the menu bar icon and select "Preferences…"
 3. Paste your Vercel and/or Cloudflare token. Changes save automatically.
 4. Optionally narrow what's shown:
@@ -139,9 +142,13 @@ MIT License - see [LICENSE](LICENSE) file for details
 
 ## FAQ
 
-### How do I monitor Vercel deployments from the macOS menu bar?
+### How do I monitor Vercel or Cloudflare deployments from the macOS menu bar?
 
-Install the Vercel Deployment Menu Bar app, configure it with your Vercel API token, and it will automatically display real-time deployment status in your macOS menu bar. The app polls the Vercel API and updates the status icon based on your latest deployments.
+Install Deploylight and add your Vercel and/or Cloudflare API token in Preferences. It displays real-time deployment status in your macOS menu bar, polling each provider's API and updating the status icon based on your latest deployments.
+
+### I used Vercel Deployment Menu Bar. Do I need to set things up again?
+
+No. Deploylight is the same app under a new name, and it keeps your existing settings. After installing Deploylight, you can delete the old "Vercel Deployment Menu Bar" app.
 
 ### Do I need my Vercel Team ID?
 
@@ -151,10 +158,14 @@ Usually not. Preferences lists the scopes your token can access, so you can pick
 
 The latest releases (v0.2.0+) are properly code-signed and notarized, so you shouldn't see this error. If you do:
 
-1. Download the latest release from the [Releases](https://github.com/andrewk17/vercel-deployment-menu-bar/releases) page
+1. Download the latest release from the [Releases](https://github.com/andrewk17/deploylight/releases) page
 2. If the error persists, right-click the app and select "Open" instead of double-clicking
 3. For older versions, you may need to remove the quarantine attribute: `xattr -d com.apple.quarantine "/Applications/Vercel Deployment Menu Bar.app"`
 
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+---
+
+Deploylight is not affiliated with or endorsed by Vercel Inc. or Cloudflare, Inc. Vercel and Cloudflare are trademarks of their respective owners.

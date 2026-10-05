@@ -1,5 +1,5 @@
 import XCTest
-@testable import vercel_deployment_menu_bar
+@testable import Deploylight
 
 final class DeploymentFilterTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_800_000_000)

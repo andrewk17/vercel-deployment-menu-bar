@@ -1,5 +1,5 @@
 import XCTest
-@testable import vercel_deployment_menu_bar
+@testable import Deploylight
 
 final class CloudflareBuildsProviderTests: XCTestCase {
     private var provider: CloudflareBuildsProvider!

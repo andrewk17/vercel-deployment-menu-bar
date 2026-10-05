@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Open-source macOS menu bar app to monitor Vercel deployment status in real time. Free developer tool with build/ready/error state monitoring.">
-    <meta name="keywords" content="vercel menu bar, vercel deployment status, vercel mac menu bar, monitor vercel deployments macos, vercel api token, vercel team id, vercel deploy monitor, mac status bar app, swift menu bar app, devops">
-    <title>Vercel Deployment Menu Bar for macOS - Monitor Vercel Deployments</title>
+    <meta name="description" content="Vercel and Cloudflare deploy status in your Mac menu bar. Deploylight is a free, open-source macOS app that shows Vercel deployments and Cloudflare Workers Builds as they build, succeed, or fail.">
+    <title>Vercel &amp; Cloudflare Deploy Status in Your Mac Menu Bar | Deploylight</title>
+    <link rel="canonical" href="https://deploylight.akim.workers.dev/">
     <link rel="stylesheet" href="style.css">
 
     <!-- Structured Data -->
@@ -13,14 +13,14 @@
     {
       "@context": "https://schema.org",
       "@type": "SoftwareApplication",
-      "name": "Vercel Deployment Menu Bar",
+      "name": "Deploylight",
+      "alternateName": "Vercel Deployment Menu Bar",
       "operatingSystem": "macOS 13+",
       "applicationCategory": "DeveloperApplication",
-      "description": "Open-source macOS menu bar app to monitor Vercel deployment status in real time.",
-      "softwareVersion": "0.2.0",
-      "url": "https://vercel-deployment-menu-bar.vercel.app/",
-      "downloadUrl": "https://github.com/andrewk17/vercel-deployment-menu-bar/releases",
-      "screenshot": "https://vercel-deployment-menu-bar.vercel.app/img/vercel-menu-bar-deployment-status-macos.png",
+      "description": "Open-source macOS menu bar app that shows Vercel deployment and Cloudflare Workers Builds status in real time.",
+      "url": "https://deploylight.akim.workers.dev/",
+      "downloadUrl": "https://github.com/andrewk17/deploylight/releases",
+      "screenshot": "https://deploylight.akim.workers.dev/img/vercel-menu-bar-deployment-status-macos.png",
       "license": "https://opensource.org/licenses/MIT",
       "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     }
@@ -30,7 +30,7 @@
     <header>
         <div class="container">
             <nav>
-                <a href="https://github.com/andrewk17/vercel-deployment-menu-bar" class="github-link">View on GitHub</a>
+                <a href="https://github.com/andrewk17/deploylight" class="github-link">View on GitHub</a>
             </nav>
         </div>
     </header>
@@ -38,12 +38,12 @@
     <main>
         <section class="hero">
             <div class="container">
-                <h1>Monitor Vercel deployments from your macOS menu bar</h1>
-                <p class="subhead">Free &amp; open source. Real-time build/ready/error status. Works with personal &amp; team tokens.</p>
+                <h1>Vercel &amp; Cloudflare deploy status in your Mac menu bar</h1>
+                <p class="subhead">Deploylight is a free, open-source menu bar app for macOS. See Vercel deployments and Cloudflare Workers Builds in one list as they build, succeed, or fail.</p>
 
                 <div class="cta-buttons">
-                    <a href="https://github.com/andrewk17/vercel-deployment-menu-bar/releases/latest" class="btn btn-primary">Download for macOS</a>
-                    <a href="https://github.com/andrewk17/vercel-deployment-menu-bar" class="btn btn-secondary">View on GitHub</a>
+                    <a href="https://github.com/andrewk17/deploylight/releases/latest" class="btn btn-primary">Download for macOS</a>
+                    <a href="https://github.com/andrewk17/deploylight" class="btn btn-secondary">View on GitHub</a>
                 </div>
             </div>
         </section>
@@ -51,7 +51,7 @@
         <section class="screenshot-section">
             <div class="container">
                 <img src="img/vercel-menu-bar-deployment-status-macos.png"
-                     alt="Vercel deployment status in macOS menu bar showing build, ready, and error states"
+                     alt="Deploylight showing deployment status in the macOS menu bar with build, ready, and error states"
                      class="main-screenshot">
             </div>
         </section>
@@ -62,19 +62,19 @@
                 <div class="feature-grid">
                     <div class="feature">
                         <h3>Real-time Monitoring</h3>
-                        <p>Continuously monitors your Vercel deployments and updates the menu bar icon based on deployment states.</p>
+                        <p>Polls your providers and updates the menu bar icon as deployments build, succeed, or fail. It checks faster while a build is running.</p>
                     </div>
                     <div class="feature">
-                        <h3>Visual Indicators</h3>
-                        <p>Clear status icons for building, ready, error, and other deployment states at a glance.</p>
+                        <h3>One List, Multiple Providers</h3>
+                        <p>Vercel deployments and Cloudflare Workers Builds appear together, newest first. Use either provider or both.</p>
                     </div>
                     <div class="feature">
-                        <h3>Personal & Team Support</h3>
-                        <p>Works with both personal Vercel accounts and team deployments using team-scoped tokens.</p>
+                        <h3>Filters</h3>
+                        <p>Pick teams, projects, accounts, and Workers, and filter by branch, production/preview, and deployment state.</p>
                     </div>
                     <div class="feature">
-                        <h3>Lightweight & Native</h3>
-                        <p>Built with Swift and SwiftUI for optimal macOS performance. Minimal resource usage.</p>
+                        <h3>Lightweight &amp; Native</h3>
+                        <p>Built with Swift and SwiftUI. Code-signed and notarized, with minimal resource usage.</p>
                     </div>
                 </div>
             </div>
@@ -86,29 +86,18 @@
 
                 <div class="step">
                     <h3>1. Download and Install</h3>
-                    <p>Download the latest release, unzip it, and move to your Applications folder. The app is properly code-signed and notarized.</p>
+                    <p>Download the latest release, unzip it, and move Deploylight to your Applications folder.</p>
                 </div>
 
                 <div class="step">
-                    <h3>2. Generate a Vercel API Token</h3>
-                    <p>Go to <a href="https://vercel.com/account/tokens" target="_blank" rel="noopener">Vercel Account Settings → Tokens</a> and create a new Vercel API token. Choose either personal account or team scope for monitoring your Vercel deployments.</p>
+                    <h3>2. Create an API Token</h3>
+                    <p><strong>Vercel:</strong> create a token in <a href="https://vercel.com/account/tokens" target="_blank" rel="noopener">Vercel Account Settings → Tokens</a>, scoped to your personal account or a team.</p>
+                    <p><strong>Cloudflare:</strong> create a user token in <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener">My Profile → API Tokens</a> with the account permissions <em>Workers Builds Configuration: Read</em> and <em>Workers Scripts: Read</em>.</p>
                 </div>
 
                 <div class="step">
                     <h3>3. Configure the App</h3>
-                    <p>Launch the app, click the menu bar icon, select "Preferences", and enter your API token. If using a team token, also enter your Team ID(s). You can provide comma-separated Team IDs and Project Name filters.</p>
-                </div>
-
-                <div class="step">
-                    <h3>Where do I find my Vercel Team ID?</h3>
-                    <p>If you're using a team-scoped token:</p>
-                    <ol>
-                        <li>Go to your <a href="https://vercel.com/" target="_blank" rel="noopener">Vercel Dashboard</a></li>
-                        <li>Select your team from the dropdown</li>
-                        <li>Look at the URL: <code>https://vercel.com/[TEAM_ID]/~</code></li>
-                        <li>The <code>[TEAM_ID]</code> is what you need (e.g., if the URL shows <code>https://vercel.com/acme-corp/~</code>, your Team ID is <code>acme-corp</code>)</li>
-                    </ol>
-                    <p>For personal accounts, leave the Team ID(s) field empty.</p>
+                    <p>Click the menu bar icon, select "Preferences…", and paste your token(s). Deploylight lists the teams, projects, accounts, and Workers your tokens can see, so you can pick from a list. Changes save automatically.</p>
                 </div>
             </div>
         </section>
@@ -118,7 +107,7 @@
                 <h2>Requirements</h2>
                 <ul>
                     <li>macOS 13.0 or later</li>
-                    <li>Vercel API token (free to create)</li>
+                    <li>A Vercel API token and/or a Cloudflare user API token (free to create)</li>
                 </ul>
             </div>
         </section>
@@ -126,15 +115,15 @@
         <section class="open-source">
             <div class="container">
                 <h2>Open Source</h2>
-                <p>Vercel Deployment Menu Bar is open source under the MIT License. View the source code, report issues, or contribute on <a href="https://github.com/andrewk17/vercel-deployment-menu-bar">GitHub</a>.</p>
+                <p>Deploylight (formerly Vercel Deployment Menu Bar) is open source under the MIT License. View the source code, report issues, or contribute on <a href="https://github.com/andrewk17/deploylight">GitHub</a>.</p>
             </div>
         </section>
     </main>
 
     <footer>
         <div class="container">
-            <p class="disclaimer">Not affiliated with Vercel Inc. Vercel is a trademark of Vercel Inc.</p>
-            <p>&copy; 2025 Vercel Deployment Menu Bar. Released under the <a href="https://opensource.org/licenses/MIT">MIT License</a>.</p>
+            <p class="disclaimer">Not affiliated with or endorsed by Vercel Inc. or Cloudflare, Inc. Vercel and Cloudflare are trademarks of their respective owners.</p>
+            <p>&copy; 2025 Deploylight. Released under the <a href="https://opensource.org/licenses/MIT">MIT License</a>.</p>
         </div>
     </footer>
 </body>

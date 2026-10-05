@@ -226,7 +226,7 @@ final class StatusItemController {
         }
         menu.addItem(actionItem("Preferences…", #selector(openPreferences(_:)), key: ","))
         menu.addItem(.separator())
-        menu.addItem(actionItem("Quit Vercel Deployment Menu Bar", #selector(quitApp(_:)), key: "q"))
+        menu.addItem(actionItem("Quit Deploylight", #selector(quitApp(_:)), key: "q"))
     }
 
     private func dashboardURL(for provider: Deployment.Provider, preferences: Preferences) -> URL? {
