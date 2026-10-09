@@ -469,7 +469,7 @@ struct AccountsPane: View {
                     if case let .failed(message) = viewModel.cloudflareStatus {
                         Text(message).foregroundStyle(.red)
                     }
-                    Text("Use a user API token with Workers Builds Configuration: Read and Workers Scripts: Read. Shows Workers connected to git with Workers Builds; Workers deployed directly with Wrangler have no builds.")
+                    Text("Use a user API token with Workers Builds Configuration: Read and Workers Scripts: Read. Shows Workers that build from a Git repository with Workers Builds. Workers deployed directly with Wrangler have no builds, and Cloudflare Pages isn't supported yet.")
                         .foregroundStyle(.secondary)
                 }
             }

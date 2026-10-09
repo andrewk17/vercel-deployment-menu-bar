@@ -99,7 +99,7 @@ If notarization credentials aren't configured, the script will still sign the ap
 
 ### Step 2 (Optional): Generate a Cloudflare API Token
 
-To also show Cloudflare Workers Builds (Workers connected to a git repository in the Cloudflare dashboard):
+Deploylight shows Cloudflare Workers that build from a GitHub or GitLab repository with [Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/). Cloudflare Pages projects aren't supported yet. To add them:
 
 1. Go to [Cloudflare → My Profile → API Tokens](https://dash.cloudflare.com/profile/api-tokens) and click "Create Token"
 2. Choose "Create Custom Token" and add these **Account** permissions:
@@ -111,6 +111,8 @@ To also show Cloudflare Workers Builds (Workers connected to a git repository in
 It must be a **user** API token (created from your profile). Account-owned tokens can't read Workers Builds.
 
 Workers deployed directly with `wrangler deploy` (from your machine or another CI) don't create builds, so they won't appear.
+
+Builds of a Worker's production branch show as **Production**. Builds of other branches and pull requests, which upload a preview version instead of deploying, show as **Preview**.
 
 ### Step 3: Configure the App
 
@@ -151,7 +153,17 @@ Install Deploylight and add your Vercel and/or Cloudflare API token in Preferenc
 
 ### I used Vercel Deployment Menu Bar. Do I need to set things up again?
 
-No. Deploylight is the same app under a new name, and it keeps your existing settings. After installing Deploylight, you can delete the old "Vercel Deployment Menu Bar" app.
+No. Deploylight is the same app under a new name, and it keeps your existing settings. Move Deploylight to your Applications folder and open it, and it offers to quit the old "Vercel Deployment Menu Bar" app and move it to the Trash.
+
+### Why don't my Cloudflare Workers show up?
+
+Check that:
+
+- The Worker builds with [Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/), meaning it's connected to a GitHub or GitLab repository in the Cloudflare dashboard. Workers deployed with `wrangler deploy` from your machine or another CI have no builds to show.
+- The token is a **user** API token from your profile, with **Workers Builds Configuration: Read** and **Workers Scripts: Read**, and includes the Worker's account.
+- It's a Worker, not a Cloudflare Pages project. Pages isn't supported yet.
+
+Preferences → Accounts shows whether the token connects and lists the Workers it can see.
 
 ### Do I need my Vercel Team ID?
 
