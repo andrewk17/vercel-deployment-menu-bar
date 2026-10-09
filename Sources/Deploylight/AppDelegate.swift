@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusController = StatusItemController()
         statusController?.start()
+        LegacyApp.offerReplacement()
     }
 
     func applicationWillTerminate(_ notification: Notification) {

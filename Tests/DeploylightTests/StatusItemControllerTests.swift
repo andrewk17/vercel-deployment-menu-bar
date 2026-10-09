@@ -25,4 +25,14 @@ final class StatusItemControllerTests: XCTestCase {
         XCTAssertNil(StatusItemController.sanitizedCommitToolTip(from: nil))
         XCTAssertNil(StatusItemController.sanitizedCommitToolTip(from: "   \n\n   "))
     }
+
+    func testOnlyInstalledCopiesReplaceTheOldApp() {
+        let folders = [URL(fileURLWithPath: "/Applications"), URL(fileURLWithPath: "/Users/someone/Applications")]
+
+        XCTAssertTrue(LegacyApp.isInApplicationsFolder(URL(fileURLWithPath: "/Applications/Deploylight.app"), folders: folders))
+        XCTAssertTrue(LegacyApp.isInApplicationsFolder(URL(fileURLWithPath: "/Users/someone/Applications/Deploylight.app"), folders: folders))
+        XCTAssertFalse(LegacyApp.isInApplicationsFolder(URL(fileURLWithPath: "/Users/someone/Downloads/Deploylight.app"), folders: folders))
+        XCTAssertFalse(LegacyApp.isInApplicationsFolder(URL(fileURLWithPath: "/Volumes/Deploylight/Deploylight.app"), folders: folders))
+        XCTAssertFalse(LegacyApp.isInApplicationsFolder(URL(fileURLWithPath: "/Applications/Tools/Deploylight.app"), folders: folders))
+    }
 }

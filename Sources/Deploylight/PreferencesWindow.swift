@@ -1,4 +1,5 @@
 import AppKit
+import ServiceManagement
 import SwiftUI
 
 @MainActor
@@ -76,7 +77,7 @@ enum PreferencesPane: CaseIterable {
     /// Accounts scrolls once providers list their teams and Workers; the others fit.
     private var height: CGFloat {
         switch self {
-        case .general: 350
+        case .general: 400
         case .menu: 545
         case .accounts: 600
         case .filters: 480
@@ -118,6 +119,10 @@ struct GeneralPane: View {
                 }
             }
 
+            Section {
+                OpenAtLoginToggle()
+            }
+
             Section("Refresh") {
                 Picker("When idle, check every", selection: $viewModel.refreshIntervalIdle) {
                     ForEach(pickerOptions([15, 30, 60, 300], including: viewModel.refreshIntervalIdle), id: \.self) { seconds in
@@ -140,6 +145,46 @@ struct GeneralPane: View {
             return minutes == 1 ? "Minute" : "\(minutes) Minutes"
         }
         return "\(seconds) Seconds"
+    }
+}
+
+/// Reads the system's login item state each time the pane appears, since it can also be
+/// changed in System Settings.
+private struct OpenAtLoginToggle: View {
+    @State private var status = LoginItem.status
+    @State private var errorMessage: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Toggle("Open at login", isOn: Binding(
+                get: { status == .enabled || status == .requiresApproval },
+                set: { enabled in
+                    do {
+                        try LoginItem.setEnabled(enabled)
+                        errorMessage = nil
+                    } catch {
+                        errorMessage = error.localizedDescription
+                    }
+                    status = LoginItem.status
+                }
+            ))
+            .disabled(!LoginItem.isAvailable)
+
+            if status == .requiresApproval {
+                HStack(spacing: 4) {
+                    Text("Waiting for approval in System Settings.")
+                    Button("Open Login Items…") { SMAppService.openSystemSettingsLoginItems() }
+                        .buttonStyle(.link)
+                }
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            } else if let errorMessage {
+                Text(errorMessage)
+                    .font(.callout)
+                    .foregroundStyle(.red)
+            }
+        }
+        .onAppear { status = LoginItem.status }
     }
 }
 
