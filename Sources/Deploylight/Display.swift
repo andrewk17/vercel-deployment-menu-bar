@@ -104,7 +104,7 @@ extension Deployment.State {
         case .ready: "checkmark.circle.fill"
         case .error: "xmark.circle.fill"
         case .building: "hourglass"
-        case .queued: "clock.fill"
+        case .queued: "clock.circle.fill"
         case .canceled: "minus.circle.fill"
         case .unknown: "questionmark.circle"
         }
@@ -119,6 +119,15 @@ extension Deployment.State {
         case .canceled, .unknown: .systemGray
         }
     }
+
+    /// Palette colors for the symbol's layers. A single color would paint a filled
+    /// symbol's inner glyph the same as its background, leaving a blank disc.
+    var symbolColors: [NSColor] {
+        switch self {
+        case .ready, .error, .queued, .canceled: [.white, color]
+        case .building, .unknown: [color]
+        }
+    }
 }
 
 @MainActor
@@ -130,7 +139,7 @@ enum StatusIcon {
             return cached
         }
         let image = NSImage(systemSymbolName: state.symbolName, accessibilityDescription: nil)?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [state.color]))
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: state.symbolColors))
         cache[state] = image
         return image
     }
